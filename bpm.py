@@ -13,7 +13,8 @@ def main():
 
     tempo, beats = librosa.beat.beat_track(y=y, sr=sr)
 
-    print(f"BPM: {tempo:.2f}")
+    bpm_value = float(tempo) if tempo.ndim == 0 else float(tempo[0])
+    print(f"BPM: {bpm_value:.2f}")
     print(f"Detected beats: {len(beats)}")
 
 
