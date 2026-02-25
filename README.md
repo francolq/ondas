@@ -14,6 +14,20 @@ gcc sine.c -o sine -lm
 ```
 Outputs: `sine.wav` (440 Hz, 1 second, 16-bit mono, 44.1 kHz)
 
+### sine.py
+Python version of sine wave generator (requires Python 3).
+
+**Run:**
+```bash
+python3 sine.py
+```
+Outputs: `sine.wav` (440 Hz, 1 second, 16-bit mono, 44.1 kHz)
+
+**With custom parameters:**
+```bash
+python3 -c "import sine; sine.create_sine_wav('440Hz.wav', frequency=440, duration=2.0)"
+```
+
 ### sine_stereo.c
 Generates a stereo sine wave WAV file with panning from left to right channel.
 
@@ -77,3 +91,4 @@ Example:
 
 - `wavplot.c` requires `stb_image_write.h` (included)
 - Standard C library (`libm` for math functions)
+- Python 3 (for Python scripts)
