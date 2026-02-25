@@ -87,8 +87,44 @@ Example:
 ./wavplot sine.wav sine_plot_large.png 1200 300
 ```
 
+### plot_waveform.py
+Plots the waveform of a WAV file using librosa and matplotlib.
+
+**Install dependencies:**
+```bash
+python3 -m venv ondas
+source ondas/bin/activate
+pip install librosa matplotlib
+```
+
+**Run:**
+```bash
+source ondas/bin/activate
+python plot_waveform.py <input.wav> [output.png]
+```
+
+Example:
+```bash
+python plot_waveform.py sine.wav sine_waveform.png
+```
+
+### plot_spectrogram.py
+Plots the spectrogram of a WAV file using librosa and matplotlib.
+
+**Run:**
+```bash
+source ondas/bin/activate
+python plot_spectrogram.py <input.wav> [output.png]
+```
+
+Example:
+```bash
+python plot_spectrogram.py sine.wav sine_spectrogram.png
+```
+
 ## Dependencies
 
 - `wavplot.c` requires `stb_image_write.h` (included)
 - Standard C library (`libm` for math functions)
 - Python 3 (for Python scripts)
+- Python virtual environment `ondas` with librosa and matplotlib (for plotting scripts)
