@@ -122,6 +122,30 @@ Example:
 python plot_spectrogram.py sine.wav sine_spectrogram.png
 ```
 
+### bpm.py
+Calculates the BPM of a WAV file using librosa.
+
+**Run:**
+```bash
+source ondas/bin/activate
+python bpm.py <input.wav>
+```
+
+Example:
+```bash
+python bpm.py sine.wav
+```
+
+## Building C Programs
+
+Use the Makefile to build all C programs:
+
+```bash
+make          # build all programs
+make sine     # build specific program
+make clean    # remove binaries and output files
+```
+
 ## Dependencies
 
 - `wavplot.c` requires `stb_image_write.h` (included)
