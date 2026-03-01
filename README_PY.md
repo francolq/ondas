@@ -9,7 +9,7 @@ Create and activate a virtual environment:
 ```bash
 python3 -m venv ondas
 source ondas/bin/activate
-pip install librosa matplotlib soundfile numpy sounddevice
+pip install librosa matplotlib soundfile numpy sounddevice textual textual-slider
 ```
 
 ## Scripts
@@ -36,6 +36,15 @@ Plays a sine wave in real-time using sounddevice.
 python sine_stream.py
 ```
 Press Enter to stop.
+
+### wave_app.py
+Interactive TUI app for real-time sine wave synthesis with amplitude and frequency sliders.
+
+**Run:**
+```bash
+python wave_app.py
+```
+Use sliders to adjust amplitude (0-100%) and frequency (20-2000 Hz). Press Ctrl+C to quit.
 
 ### plot_waveform.py
 Plots the waveform of a WAV file using librosa and matplotlib.
@@ -84,3 +93,5 @@ python bpm.py sine.wav
 - soundfile
 - numpy
 - sounddevice
+- textual
+- textual-slider
