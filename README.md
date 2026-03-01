@@ -28,6 +28,22 @@ Outputs: `sine.wav` (440 Hz, 1 second, 16-bit mono, 44.1 kHz)
 python3 -c "import sine; sine.create_sine_wav('440Hz.wav', frequency=440, duration=2.0)"
 ```
 
+### sine_stream.py
+Plays a sine wave in real-time using sounddevice.
+
+**Install dependencies:**
+```bash
+source ondas/bin/activate
+pip install sounddevice numpy
+```
+
+**Run:**
+```bash
+source ondas/bin/activate
+python sine_stream.py
+```
+Press Enter to stop.
+
 ### sine_stereo.c
 Generates a stereo sine wave WAV file with panning from left to right channel.
 
@@ -151,4 +167,4 @@ make clean    # remove binaries and output files
 - `wavplot.c` requires `stb_image_write.h` (included)
 - Standard C library (`libm` for math functions)
 - Python 3 (for Python scripts)
-- Python virtual environment `ondas` with librosa and matplotlib (for plotting scripts)
+- Python virtual environment `ondas` with librosa, matplotlib, and sounddevice (for plotting/streaming scripts)
