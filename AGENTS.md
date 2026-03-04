@@ -4,57 +4,99 @@
 
 This is a C project containing WAV audio utilities (sine, sawtooth, square wave generators, wavinfo, wavplot). Each program is a standalone C file that compiles to an executable.
 
-## Build Commands
+## Project Structure
 
-### Compile Individual Programs
-
-```bash
-# Hello World
-gcc hello.c -o hello
-
-# Sine wave generator (requires -lm for math library)
-gcc sine.c -o sine -lm
-
-# Stereo sine wave
-gcc sine_stereo.c -o sine_stereo -lm
-
-# Sawtooth wave
-gcc sawtooth.c -o sawtooth -lm
-
-# Square wave
-gcc square.c -o square -lm
-
-# WAV file info
-gcc wavinfo.c -o wavinfo
-
-# WAV waveform plotter (requires -lm)
-gcc wavplot.c -o wavplot -lm
+```
+wav/
+├── sine.c           # Sine wave generator
+├── sine_stereo.c   # Stereo sine wave generator
+├── sawtooth.c      # Sawtooth wave generator
+├── square.c        # Square wave generator
+├── wavinfo.c       # WAV file info utility
+├── wavplot.c       # WAV waveform plotter (requires libgd)
+├── Makefile        # Build automation
+└── AGENTS.md       # This file
 ```
 
-### Run Programs
+## Build Commands
+
+### Using Makefile (Recommended)
 
 ```bash
-./hello
-./sine
-./sawtooth
-./square
-./wavinfo <file.wav>
+# Build all programs
+make
+
+# Build a specific program
+make sine
+make sawtooth
+make square
+make wavinfo
+make wavplot
+
+# Clean build artifacts
+make clean
+```
+
+### Manual Compilation
+
+```bash
+# Programs requiring math library (-lm)
+gcc -Wall -Wextra -pedantic -g sine.c -o sine -lm
+gcc -Wall -Wextra -pedantic -g sine_stereo.c -o sine_stereo -lm
+gcc -Wall -Wextra -pedantic -g sawtooth.c -o sawtooth -lm
+gcc -Wall -Wextra -pedantic -g square.c -o square -lm
+gcc -Wall -Wextra -pedantic -g wavplot.c -o wavplot -lm
+
+# Programs without math library
+gcc -Wall -Wextra -pedantic -g wavinfo.c -o wavinfo
+```
+
+### Compiler Flags
+
+- `-Wall -Wextra -pedantic`: Enable strict warnings
+- `-g`: Debug symbols
+- `-lm`: Math library (required for sin, cos, M_PI)
+- `-lgd`: Image library (for wavplot)
+
+## Run Programs
+
+```bash
+./sine                    # Generates sine.wav (440 Hz, 1 second)
+./sawtooth               # Generates sawtooth.wav
+./square                # Generates square.wav
+./wavinfo <file.wav>     # Display WAV file metadata
 ./wavplot <input.wav> <output.png> [width] [height]
 ```
 
-### Testing
+## Testing
 
-There is no formal test framework. Manual testing involves:
-1. Compiling a program
-2. Running it and checking output files
-3. Verifying WAV files with `wavinfo` or checking output with an audio player
+No formal test framework exists. Testing is manual:
 
-### Linting
+1. Compile a program: `make <target>`
+2. Run it and check output files
+3. Verify WAV files: `./wavinfo output.wav`
+4. Play audio with an audio player (e.g., `aplay`, `audacity`)
+5. Check for memory leaks: `valgrind ./program`
 
-No formal linter is configured. Code should be checked manually for:
-- Memory leaks (use `valgrind` if available)
+### Running a Single Program for Testing
+
+```bash
+# Build and test sine wave
+make sine && ./sine
+./wavinfo sine.wav
+
+# Build and test wavinfo
+make wavinfo && ./wavinfo sine.wav
+```
+
+## Linting
+
+No formal linter configured. Manually check for:
+
+- Memory leaks (use `valgrind ./program`)
 - Buffer overflows
-- Proper file handle cleanup
+- Proper file handle cleanup (`fclose()`)
+- Uninitialized variables
 
 ## Code Style Guidelines
 
@@ -69,28 +111,29 @@ No formal linter is configured. Code should be checked manually for:
 
 - **Types**: PascalCase (e.g., `WavHeader`, `AudioConfig`)
 - **Variables**: camelCase (e.g., `sampleRate`, `fileSize`, `numChannels`)
-- **Constants**: Use uppercase with underscores (e.g., `MAX_SAMPLES`, `DEFAULT_FREQUENCY`)
-- **Functions**: snake_case (e.g., `write_wav_header`, `calculate_sample`)
+- **Constants**: UPPER_CASE with underscores (e.g., `MAX_SAMPLES`)
+- **Functions**: snake_case (e.g., `write_wav_header`)
 
 ### Imports
 
-Order includes:
-1. Standard C library headers (`<stdio.h>`, `<stdlib.h>`, `<math.h>`, `<string.h>`)
-2. Project-specific headers (if any)
+Order includes alphabetically:
+1. Standard C headers (`<stdio.h>`, `<stdlib.h>`, `<math.h>`, `<string.h>`)
+2. System headers
+3. Project-specific headers (none currently)
 
 ```c
 #include <stdio.h>
-#include <math.h>
 #include <stdlib.h>
+#include <math.h>
 #include <string.h>
 ```
 
 ### Types
 
-- Use `int` for most integer values
-- Use `short` for 16-bit audio samples
-- Use `double` for floating-point audio calculations
-- Use fixed-width types from `<stdint.h>` when exact size matters (`int32_t`, `uint16_t`)
+- `int`: Most integer values
+- `short`: 16-bit audio samples
+- `double`: Floating-point audio calculations
+- Fixed-width types from `<stdint.h>` when exact size matters (`int32_t`, `uint16_t`)
 
 ### Structures
 
@@ -99,16 +142,15 @@ typedef struct {
     char riff[4];
     int file_size;
     char wave[4];
-    // ...
 } WavHeader;
 ```
 
 ### Error Handling
 
-- Check all file operations for NULL returns
-- Use `perror()` for descriptive error messages
+- Check all file operations for NULL
+- Use `perror()` for descriptive errors
 - Return non-zero exit codes on failure
-- Close file handles in all code paths (including error paths)
+- Close file handles in all code paths
 
 ```c
 FILE *fp = fopen("output.wav", "wb");
@@ -121,14 +163,12 @@ if (!fp) {
 ### Memory Management
 
 - Always `fclose()` files after use
-- Use `malloc()`/`free()` for dynamic memory
-- Check malloc return values for NULL
-- Zero-initialize structures when needed with `memset()`
+- Check `malloc()` return values for NULL
+- Use `memset()` for zero-initialization
 
 ### Constants
 
-Define numeric constants as variables with descriptive names:
-
+Define as variables with descriptive names:
 ```c
 double frequency = 440.0;
 int sample_rate = 44100;
@@ -136,32 +176,23 @@ int bits_per_sample = 16;
 int num_channels = 1;
 ```
 
-### Comments
-
-- Keep comments brief and purposeful
-- Explain *why*, not *what*
-- Document function parameters and return values
-- No excessive commenting on obvious code
-
 ### Code Organization
 
 1. Includes
 2. Type definitions
 3. Function prototypes (if needed)
 4. Global constants (if any)
-5. Main function and helper functions
+5. Main and helper functions
 
 ### WAV File Handling
 
-- Always use binary mode (`"rb"`, `"wb"`) for WAV files
+- Use binary mode (`"rb"`, `"wb"`)
 - Write header before audio data
-- Use correct byte ordering for WAV format (little-endian)
-- Calculate correct `data_size` and `file_size` fields
+- Use little-endian byte ordering
+- Calculate correct `data_size` and `file_size`
 
 ### Best Practices
 
-- Compile with warnings enabled: `gcc -Wall -Wextra -pedantic`
-- Enable debug symbols for development: `gcc -g`
-- Example: `gcc -Wall -Wextra -g -o program program.c -lm`
-- Use `const` for variables that shouldn't change
-- Prefer stack allocation over heap when possible
+- Use `const` for read-only variables
+- Prefer stack over heap when possible
+- Enable all warnings: `-Wall -Wextra -pedantic`
