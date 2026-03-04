@@ -37,6 +37,15 @@ python sine_stream.py
 ```
 Press Enter to stop.
 
+### sample_stream.py
+Loops a sample infinitely to an output stream.
+
+**Run:**
+```bash
+python sample_stream.py <sample.wav> [volume]
+```
+Press Enter to stop.
+
 ### wave_app.py
 Interactive TUI app for real-time sine wave synthesis with amplitude and frequency sliders.
 
