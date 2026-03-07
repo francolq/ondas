@@ -46,6 +46,14 @@ python sample_stream.py <sample.wav> [volume]
 ```
 Press Enter to stop.
 
+### lowpass.py
+Applies a low-pass filter with real-time cutoff adjustment to white noise. Cutoff sweeps from 20kHz to 20Hz over 5 seconds using an all-pass filter based implementation.
+
+**Run:**
+```bash
+python lowpass.py
+```
+
 ### wave_app.py
 Interactive TUI app for real-time sine wave synthesis with amplitude and frequency sliders.
 
