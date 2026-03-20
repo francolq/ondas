@@ -9,7 +9,7 @@ Create and activate a virtual environment:
 ```bash
 python3 -m venv ondas
 source ondas/bin/activate
-pip install librosa matplotlib soundfile numpy sounddevice textual textual-slider
+pip install librosa matplotlib soundfile numpy sounddevice textual textual-slider mido python-rtmidi
 ```
 
 ## Scripts
@@ -102,6 +102,20 @@ Example:
 python bpm.py sine.wav
 ```
 
+### midi_input.py
+Reads input from a MIDI keyboard in real-time.
+
+**Setup:**
+```bash
+pip install mido python-rtmidi
+```
+
+**Run:**
+```bash
+python midi_input.py
+```
+Displays note names, velocities, control changes, and pitch wheel messages. Press Ctrl+C to exit.
+
 ## Dependencies
 
 - Python 3
@@ -112,3 +126,5 @@ python bpm.py sine.wav
 - sounddevice
 - textual
 - textual-slider
+- mido
+- python-rtmidi
