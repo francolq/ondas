@@ -127,6 +127,11 @@ class WaveApp(App):
             self.query_one("#frequency", Slider).value = slider_val
             self.frequency_label.update(f"Frequency: {int(self.frequency)} Hz (MIDI: {name})\n")
             self.log_widget.write(f"Note On: {name}\n")
+        elif msg.type == 'control_change' and msg.control == 110:
+            # setting the slider triggers the on_slider_changed event
+            # self.amplitude = msg.value / 127.0
+            self.query_one("#amplitude", Slider).value = int(msg.value * 100 / 127)
+            self.log_widget.write(f"CC 110: {msg.value}\n")
 
     def on_unmount(self):
         if self.stream:
