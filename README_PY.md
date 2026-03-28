@@ -63,6 +63,15 @@ python wave_app.py
 ```
 Use sliders to adjust amplitude (0-100%) and frequency (20-2000 Hz). Press Ctrl+C to quit.
 
+### sampler_app.py
+Interactive TUI sampler with 16 pads (4x4 grid). Each pad plays a different section of a sample file (divides time into 16 equal parts).
+
+**Run:**
+```bash
+python sampler_app.py <sample.wav>
+```
+Pads can be triggered by clicking or via MIDI (notes 36-51). Select MIDI device at startup or skip for keyboard/mouse only.
+
 ### plot_waveform.py
 Plots the waveform of a WAV file using librosa and matplotlib.
 

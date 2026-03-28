@@ -2,197 +2,200 @@
 
 ## Project Overview
 
-This is a C project containing WAV audio utilities (sine, sawtooth, square wave generators, wavinfo, wavplot). Each program is a standalone C file that compiles to an executable.
+Mixed C and Python project for WAV audio generation and analysis. Contains C programs for wave generation (sine, sawtooth, square) and utilities (wavinfo, wavplot), plus Python scripts for advanced audio processing.
 
 ## Project Structure
 
 ```
 wav/
-├── sine.c           # Sine wave generator
-├── sine_stereo.c   # Stereo sine wave generator
-├── sawtooth.c      # Sawtooth wave generator
-├── square.c        # Square wave generator
-├── wavinfo.c       # WAV file info utility
-├── wavplot.c       # WAV waveform plotter (requires libgd)
-├── Makefile        # Build automation
-└── AGENTS.md       # This file
+├── *.c                # C programs (sine, sawtooth, square, wavinfo, wavplot)
+├── *.py               # Python scripts (sine.py, wave_app.py, midi_input.py, etc.)
+├── ondas/             # Python virtual environment
+├── Makefile           # C build automation
+└── AGENTS.md          # This file
 ```
 
-## Build Commands
+## Build Commands (C)
 
 ### Using Makefile (Recommended)
 
 ```bash
-# Build all programs
-make
-
-# Build a specific program
-make sine
+make              # Build all C programs
+make sine         # Build specific program
 make sawtooth
 make square
 make wavinfo
 make wavplot
-
-# Clean build artifacts
-make clean
+make clean        # Remove build artifacts
 ```
 
 ### Manual Compilation
 
 ```bash
-# Programs requiring math library (-lm)
+# With math library (-lm)
 gcc -Wall -Wextra -pedantic -g sine.c -o sine -lm
-gcc -Wall -Wextra -pedantic -g sine_stereo.c -o sine_stereo -lm
 gcc -Wall -Wextra -pedantic -g sawtooth.c -o sawtooth -lm
 gcc -Wall -Wextra -pedantic -g square.c -o square -lm
-gcc -Wall -Wextra -pedantic -g wavplot.c -o wavplot -lm
 
-# Programs without math library
+# Without math library
 gcc -Wall -Wextra -pedantic -g wavinfo.c -o wavinfo
+
+# With stb_image_write (wavplot)
+gcc -Wall -Wextra -pedantic -g wavplot.c -o wavplot -lm
 ```
 
 ### Compiler Flags
 
-- `-Wall -Wextra -pedantic`: Enable strict warnings
+- `-Wall -Wextra -pedantic`: Enable strict warnings (required)
 - `-g`: Debug symbols
-- `-lm`: Math library (required for sin, cos, M_PI)
-- `-lgd`: Image library (for wavplot)
+- `-lm`: Math library (for sin, cos, M_PI, fmod)
 
-## Run Programs
+## Build Commands (Python)
 
 ```bash
-./sine                    # Generates sine.wav (440 Hz, 1 second)
-./sawtooth               # Generates sawtooth.wav
-./square                # Generates square.wav
-./wavinfo <file.wav>     # Display WAV file metadata
-./wavplot <input.wav> <output.png> [width] [height]
+# Setup virtual environment
+python3 -m venv ondas
+source ondas/bin/activate
+pip install librosa matplotlib soundfile numpy sounddevice textual textual-slider mido python-rtmidi
+
+# Run Python scripts
+python sine.py
+python wave_app.py
+python midi_input.py
+```
+
+## Running Programs
+
+### C Programs
+
+```bash
+./sine              # Generates sine.wav (440 Hz, 1 second)
+./sawtooth          # Generates sawtooth.wav
+./square            # Generates square.wav
+./wavinfo <file>    # Display WAV metadata
+./wavplot in.wav out.png [width height]
+```
+
+### Python Programs
+
+```bash
+python sine.py [freq] [duration]     # Generate sine.wav
+python wave_app.py                    # Interactive TUI sine generator
+python midi_input.py                  # MIDI keyboard input
+python plot_waveform.py <in.wav> [out.png]
+python plot_spectrogram.py <in.wav> [out.png]
+python bpm.py <in.wav>                # Calculate BPM
 ```
 
 ## Testing
 
-No formal test framework exists. Testing is manual:
-
-1. Compile a program: `make <target>`
-2. Run it and check output files
-3. Verify WAV files: `./wavinfo output.wav`
-4. Play audio with an audio player (e.g., `aplay`, `audacity`)
-5. Check for memory leaks: `valgrind ./program`
-
-### Running a Single Program for Testing
+### Manual Testing Approach
 
 ```bash
-# Build and test sine wave
-make sine && ./sine
-./wavinfo sine.wav
+# Build and test C programs
+make sine && ./sine && ./wavinfo sine.wav
 
-# Build and test wavinfo
-make wavinfo && ./wavinfo sine.wav
+# Memory leak checking
+valgrind --leak-check=full ./sine
+
+# Verify WAV file integrity
+./wavinfo output.wav
+file output.wav
 ```
 
-## Linting
+### Python Testing
 
-No formal linter configured. Manually check for:
+```bash
+# Test sine generation
+python sine.py && python -c "import sine; sine.create_sine_wav()"
 
-- Memory leaks (use `valgrind ./program`)
-- Buffer overflows
-- Proper file handle cleanup (`fclose()`)
-- Uninitialized variables
+# Test with audio playback (if available)
+aplay sine.wav
+```
 
 ## Code Style Guidelines
 
-### Formatting
+### C Style
 
-- **Indentation**: 4 spaces (no tabs)
-- **Braces**: K&R style (opening brace on same line)
-- **Line length**: Keep under 100 characters when practical
-- **Blank lines**: Single blank line between logical sections
+**Formatting**
+- 4 spaces indentation (no tabs)
+- K&R braces (opening on same line)
+- Line length: under 100 characters
+- Single blank line between logical sections
 
-### Naming Conventions
+**Naming Conventions**
+- Types: PascalCase (`WavHeader`, `AudioConfig`)
+- Variables: camelCase (`sampleRate`, `fileSize`, `numChannels`)
+- Constants: UPPER_CASE (`MAX_SAMPLES`, `DEFAULT_FREQUENCY`)
+- Functions: snake_case (`write_wav_header`, `read_wav_file`)
 
-- **Types**: PascalCase (e.g., `WavHeader`, `AudioConfig`)
-- **Variables**: camelCase (e.g., `sampleRate`, `fileSize`, `numChannels`)
-- **Constants**: UPPER_CASE with underscores (e.g., `MAX_SAMPLES`)
-- **Functions**: snake_case (e.g., `write_wav_header`)
-
-### Imports
-
-Order includes alphabetically:
-1. Standard C headers (`<stdio.h>`, `<stdlib.h>`, `<math.h>`, `<string.h>`)
-2. System headers
-3. Project-specific headers (none currently)
-
+**Imports (alphabetical)**
 ```c
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
 #include <string.h>
 ```
 
-### Types
-
-- `int`: Most integer values
+**Types**
+- `int`: Most integers
 - `short`: 16-bit audio samples
-- `double`: Floating-point audio calculations
-- Fixed-width types from `<stdint.h>` when exact size matters (`int32_t`, `uint16_t`)
+- `double`: Floating-point calculations
+- Fixed-width: `int32_t`, `uint16_t` from `<stdint.h>`
 
-### Structures
-
+**Error Handling**
 ```c
-typedef struct {
-    char riff[4];
-    int file_size;
-    char wave[4];
-} WavHeader;
-```
-
-### Error Handling
-
-- Check all file operations for NULL
-- Use `perror()` for descriptive errors
-- Return non-zero exit codes on failure
-- Close file handles in all code paths
-
-```c
-FILE *fp = fopen("output.wav", "wb");
+FILE *fp = fopen("file.wav", "rb");
 if (!fp) {
     perror("Failed to open file");
     return 1;
 }
 ```
 
-### Memory Management
-
-- Always `fclose()` files after use
-- Check `malloc()` return values for NULL
-- Use `memset()` for zero-initialization
-
-### Constants
-
-Define as variables with descriptive names:
-```c
-double frequency = 440.0;
-int sample_rate = 44100;
-int bits_per_sample = 16;
-int num_channels = 1;
-```
-
-### Code Organization
-
+**Code Organization**
 1. Includes
 2. Type definitions
-3. Function prototypes (if needed)
-4. Global constants (if any)
+3. Function prototypes
+4. Global constants
 5. Main and helper functions
 
-### WAV File Handling
+### Python Style
 
-- Use binary mode (`"rb"`, `"wb"`)
-- Write header before audio data
-- Use little-endian byte ordering
-- Calculate correct `data_size` and `file_size`
+**Formatting**
+- 4 spaces indentation (PEP 8)
+- Line length: 100 characters
 
-### Best Practices
+**Naming Conventions**
+- Functions/classes: snake_case
+- Constants: UPPER_CASE
+- Variables: snake_case
 
+**Imports (alphabetical)**
+```python
+import math
+import struct
+import sys
+```
+
+**Error Handling**
+```python
+if not os.path.exists(filename):
+    print(f"Error: {filename} not found", file=sys.stderr)
+    return 1
+```
+
+## WAV File Format
+
+- Binary mode (`"rb"`, `"wb"`)
+- Little-endian byte ordering
+- Structure: RIFF header → fmt chunk → data chunk
+- 16-bit signed samples for audio data
+- Standard sample rates: 44100 Hz, 48000 Hz
+
+## Best Practices
+
+- Always close file handles (`fclose()`, `with` statements)
+- Check all file operations for NULL/None
+- Return non-zero exit codes on failure
 - Use `const` for read-only variables
-- Prefer stack over heap when possible
-- Enable all warnings: `-Wall -Wextra -pedantic`
+- Prefer stack over heap allocation
