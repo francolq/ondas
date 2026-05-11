@@ -103,6 +103,7 @@ class DrumMachine(App):
         self.selected_pad = 0
         self.stream = None
         self.current_voice = None
+        self.master_volume = 1.0
         self.audio_lock = threading.Lock()
 
         # Sequencer state — owned by audio callback thread
@@ -205,7 +206,7 @@ class DrumMachine(App):
             avail = min(frames, len(v.sample) - v.pos)
             if avail > 0:
                 end = v.pos + avail
-                outdata[0:avail, 0] = v.sample[v.pos:end] * v.volume
+                outdata[0:avail, 0] = v.sample[v.pos:end] * v.volume * self.master_volume
                 v.pos += avail
 
         np.clip(outdata, -1.0, 1.0, out=outdata)
@@ -265,6 +266,8 @@ class DrumMachine(App):
             if pad_num in self.active_pads:
                 self.release_pad(pad_num)
                 self.active_pads.discard(pad_num)
+        elif msg.type == "control_change" and msg.control == 3:
+            self.master_volume = msg.value / 127.0
 
     def on_unmount(self):
         if self.stream:
