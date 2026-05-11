@@ -92,7 +92,7 @@ class DrumMachine(App):
     }
     """
 
-    def __init__(self, midi_port, sample_files):
+    def __init__(self, midi_port, sample_files, pattern=None):
         super().__init__()
         self.midi_port = midi_port
         self.sample_files = sample_files
@@ -100,6 +100,11 @@ class DrumMachine(App):
         self.samples = []
         self.sample_srs = []
         self.steps = [[False] * 16 for _ in range(16)]
+        self._auto_start = pattern is not None
+        if pattern:
+            for step, pad in enumerate(pattern):
+                if 1 <= pad <= 16:
+                    self.steps[pad - 1][step] = True
         self.selected_pad = 0
         self.stream = None
         self.current_voice = None
@@ -138,6 +143,8 @@ class DrumMachine(App):
             callback=self.audio_callback,
         )
         self.stream.start()
+        if self._auto_start:
+            self.toggle_play()
 
     def load_samples(self):
         for i, path in enumerate(self.sample_files):
@@ -297,11 +304,13 @@ def connect_midi():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Drum Machine with 16-step sequencer")
     parser.add_argument("samples", nargs="+", help="WAV files for pads 1-16")
+    parser.add_argument("--pattern", nargs=16, type=int,
+                        help="16-step pattern: pad numbers 0-16 (0=silence)")
     args = parser.parse_args()
 
     samples = args.samples[:16]
     midi_port = connect_midi()
-    app = DrumMachine(midi_port, samples)
+    app = DrumMachine(midi_port, samples, pattern=args.pattern)
     if midi_port:
         midi_port.callback = app.on_midi
     app.run()
