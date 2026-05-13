@@ -14,7 +14,6 @@ import threading
 SAMPLE_RATE = 44100
 BPM = 160
 SAMPLES_PER_STEP = int(SAMPLE_RATE * 60 / BPM / 4)
-# LEVEL_CHARS = {0: " ", 25: "░", 50: "▒", 75: "▓", 100: "█"}
 LEVEL_CHARS = {0: "0", 25: "2", 50: "5", 75: "7", 100: "1"}
 LEVELS = [0, 25, 50, 75, 100]
 
@@ -44,9 +43,27 @@ class DrumMachine(App):
         width: auto;
         margin: 0 2;
     }
-    #play-btn {
-        width: 10;
-        margin: 0 2;
+    #playhead-row {
+        width: 80%;
+        height: 1;
+    }
+    #playhead-row Label {
+        width: 5;
+        min-width: 5;
+        height: 1;
+        content-align: center top;
+        color: yellow;
+    }
+    #voice-row {
+        width: 80%;
+        height: 1;
+    }
+    #voice-row Label {
+        width: 5;
+        min-width: 5;
+        height: 1;
+        content-align: center top;
+        color: cyan;
     }
     #steps-row {
         width: 80%;
@@ -68,11 +85,6 @@ class DrumMachine(App):
     Button.step-on {
         background: #2a7a2a;
         color: #aaffaa;
-    }
-    Button.current-step {
-        background: #c8a000 !important;
-        color: #000 !important;
-        text-style: bold;
     }
     Button.step-cursor {
         text-style: reverse !important;
@@ -124,20 +136,30 @@ class DrumMachine(App):
         self.playing = False
 
     def compose(self) -> ComposeResult:
-        with Horizontal(id="controls"):
-            yield Label("Pad 1:", id="selected-pad-label")
-            yield Button("▶ Play", id="play-btn")
+        yield Label("Pad 1:", id="selected-pad-label")
+        with Horizontal(id="playhead-row"):
+            for i in range(16):
+                yield Label(" ", id=f"ph_{i}")
+        with Horizontal(id="voice-row"):
+            for i in range(16):
+                yield Label(" ", id=f"voice_{i}")
         with Horizontal(id="steps-row"):
             for i in range(16):
                 yield Button(" ", id=f"step_{i}", classes="step-off")
-        labels = []
-        for i in range(16):
-            if i < len(self.sample_files):
-                name = os.path.splitext(os.path.basename(self.sample_files[i]))[0]
-                labels.append(f"{i+1}\n{name}" if len(name) <= 8 else f"{i+1}\n{name[:8]}…")
-            else:
-                labels.append(f"{i+1}")
-        yield Grid(*[Button(l, id=f"pad_{i}") for i, l in enumerate(labels)])
+        buttons = []
+        for row in range(4):
+            for col in range(4):
+                old_idx = (3 - row) * 4 + col
+                if old_idx < 15:
+                    if old_idx < len(self.sample_files):
+                        name = os.path.splitext(os.path.basename(self.sample_files[old_idx]))[0]
+                        label = f"{old_idx+1}\n{name}" if len(name) <= 8 else f"{old_idx+1}\n{name[:8]}…"
+                    else:
+                        label = f"{old_idx+1}"
+                else:
+                    label = "16\n▶Play"
+                buttons.append(Button(label, id=f"pad_{old_idx}"))
+        yield Grid(*buttons)
         yield Log("Drum machine ready.", id="log")
 
     def on_mount(self):
@@ -199,19 +221,20 @@ class DrumMachine(App):
         current = self.steps[self.selected_pad][step_num]
         self.steps[self.selected_pad][step_num] = LEVELS[(LEVELS.index(current) + 1) % len(LEVELS)]
         self._update_step_button(step_num)
+        self._update_voice_cell(step_num)
 
     def toggle_play(self):
         if self.playing:
             prev = self.current_step
             self.playing = False
-            self.query_one("#play-btn", Button).label = "▶ Play"
             if prev >= 0:
-                self._update_step_button(prev)
+                self._set_playhead(prev, False)
+            self.query_one("#pad_15", Button).label = "16\n▶Play"
         else:
             self.playing = True
             self.current_step = -1
             self.step_samples_accumulated = SAMPLES_PER_STEP
-            self.query_one("#play-btn", Button).label = "■ Stop"
+            self.query_one("#pad_15", Button).label = "16\n■Stop"
 
     def audio_callback(self, outdata, frames, time, status):
         outdata.fill(0)
@@ -245,29 +268,41 @@ class DrumMachine(App):
         if triggered:
             self.call_from_thread(self._update_playhead, prev_step, self.current_step)
 
+    def _set_playhead(self, i, visible):
+        self.query_one(f"#ph_{i}", Label).update("▼" if visible else " ")
+
     def _update_playhead(self, prev, new):
         if prev >= 0:
-            self._update_step_button(prev)
-        self._update_step_button(new)
+            self._set_playhead(prev, False)
+        self._set_playhead(new, True)
 
     def _update_step_button(self, i):
         button = self.query_one(f"#step_{i}", Button)
         level = self.steps[self.selected_pad][i]
-        is_current = (i == self.current_step) and self.playing
         button.label = LEVEL_CHARS[level]
-        button.remove_class("step-off", "step-on", "current-step", "step-cursor")
+        button.remove_class("step-off", "step-on", "step-cursor")
         if level > 0:
             button.add_class("step-on")
         else:
             button.add_class("step-off")
-        if is_current:
-            button.add_class("current-step")
         if i == self.cursor_step:
             button.add_class("step-cursor")
+
+    def _update_voice_cell(self, step):
+        active = 0
+        for pad in range(16):
+            if self.steps[pad][step] > 0:
+                active = pad + 1
+        self.query_one(f"#voice_{step}", Label).update(str(active) if active else " ")
+
+    def _update_voice_row(self):
+        for step in range(16):
+            self._update_voice_cell(step)
 
     def update_step_display(self):
         for i in range(16):
             self._update_step_button(i)
+        self._update_voice_row()
 
     @on(Button.Pressed)
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -276,18 +311,21 @@ class DrumMachine(App):
             return
         if button_id.startswith("pad_"):
             pad_num = int(button_id.replace("pad_", ""))
-            self.select_pad(pad_num)
-            self.trigger_pad(pad_num)
+            if pad_num == 15:
+                self.toggle_play()
+            else:
+                self.select_pad(pad_num)
+                self.trigger_pad(pad_num)
         elif button_id.startswith("step_"):
             step_num = int(button_id.replace("step_", ""))
             self.toggle_step(step_num)
-        elif button_id == "play-btn":
-            self.toggle_play()
 
     def on_midi(self, msg):
         if msg.type == "note_on" and msg.velocity > 0:
             pad_num = NOTE_TO_PAD.get(msg.note)
-            if pad_num is not None:
+            if pad_num == 15:
+                self.toggle_play()
+            elif pad_num is not None:
                 self.trigger_pad(pad_num, msg.velocity)
                 self.active_pads.add(pad_num)
         elif msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
@@ -308,6 +346,9 @@ class DrumMachine(App):
                 level = 100
             self.steps[self.selected_pad][self.cursor_step] = level
             self._update_step_button(self.cursor_step)
+            self._update_voice_cell(self.cursor_step)
+        elif msg.type == "control_change" and msg.control == 15:
+            self.select_pad(int(msg.value * 15 / 127))
 
     def on_unmount(self):
         if self.stream:
