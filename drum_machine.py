@@ -117,12 +117,12 @@ class DrumMachine(App):
         self.active_pads = set()
         self.samples = []
         self.sample_srs = []
-        self.steps = [[0] * 16 for _ in range(16)]
+        self.steps = [(-1, 0) for _ in range(16)]
         self._auto_start = pattern is not None
         if pattern:
             for step, pad in enumerate(pattern):
                 if 1 <= pad <= 16:
-                    self.steps[pad - 1][step] = 100
+                    self.steps[step] = (pad - 1, 100)
         self.selected_pad = 0
         self.cursor_step = 0
         self.stream = None
@@ -166,6 +166,7 @@ class DrumMachine(App):
         self.log_widget = self.query_one("#log", Log)
         self.load_samples()
         self.select_pad(0)
+        self.update_step_display()
         self.stream = sd.OutputStream(
             channels=1,
             samplerate=SAMPLE_RATE,
@@ -201,7 +202,6 @@ class DrumMachine(App):
             self.query_one("#selected-pad-label", Label).update(f"Pad {pad_num+1}: {name}")
         else:
             self.query_one("#selected-pad-label", Label).update(f"Pad {pad_num+1}")
-        self.update_step_display()
 
     def trigger_pad(self, pad_num, velocity=100):
         if 0 <= pad_num < len(self.samples) and self.samples[pad_num] is not None:
@@ -218,8 +218,12 @@ class DrumMachine(App):
             button.remove_class("active")
 
     def toggle_step(self, step_num):
-        current = self.steps[self.selected_pad][step_num]
-        self.steps[self.selected_pad][step_num] = LEVELS[(LEVELS.index(current) + 1) % len(LEVELS)]
+        pad, level = self.steps[step_num]
+        if level == 0 or pad != self.selected_pad:
+            self.steps[step_num] = (self.selected_pad, 25)
+        else:
+            next_level = LEVELS[(LEVELS.index(level) + 1) % len(LEVELS)]
+            self.steps[step_num] = (self.selected_pad, next_level) if next_level > 0 else (-1, 0)
         self._update_step_button(step_num)
         self._update_voice_cell(step_num)
 
@@ -258,13 +262,12 @@ class DrumMachine(App):
             self.step_samples_accumulated -= SAMPLES_PER_STEP
             self.current_step = (self.current_step + 1) % 16
             triggered = True
-            for pad in range(16):
-                level = self.steps[pad][self.current_step]
-                if level > 0:
-                    sample = self.samples[pad]
-                    if sample is not None:
-                        with self.audio_lock:
-                            self.current_voice = Voice(sample.copy(), level / 100)
+            pad, level = self.steps[self.current_step]
+            if level > 0:
+                sample = self.samples[pad]
+                if sample is not None:
+                    with self.audio_lock:
+                        self.current_voice = Voice(sample.copy(), level / 100)
         if triggered:
             self.call_from_thread(self._update_playhead, prev_step, self.current_step)
 
@@ -278,7 +281,7 @@ class DrumMachine(App):
 
     def _update_step_button(self, i):
         button = self.query_one(f"#step_{i}", Button)
-        level = self.steps[self.selected_pad][i]
+        pad, level = self.steps[i]
         button.label = LEVEL_CHARS[level]
         button.remove_class("step-off", "step-on", "step-cursor")
         if level > 0:
@@ -289,11 +292,8 @@ class DrumMachine(App):
             button.add_class("step-cursor")
 
     def _update_voice_cell(self, step):
-        active = 0
-        for pad in range(16):
-            if self.steps[pad][step] > 0:
-                active = pad + 1
-        self.query_one(f"#voice_{step}", Label).update(str(active) if active else " ")
+        pad, level = self.steps[step]
+        self.query_one(f"#voice_{step}", Label).update(str(pad + 1) if level > 0 else " ")
 
     def _update_voice_row(self):
         for step in range(16):
@@ -344,7 +344,7 @@ class DrumMachine(App):
             level = int(msg.value / 26) * 25
             if level > 100:
                 level = 100
-            self.steps[self.selected_pad][self.cursor_step] = level
+            self.steps[self.cursor_step] = (self.selected_pad, level) if level > 0 else (-1, 0)
             self._update_step_button(self.cursor_step)
             self._update_voice_cell(self.cursor_step)
         elif msg.type == "control_change" and msg.control == 15:
