@@ -139,7 +139,9 @@ class DrumMachine(App):
         self.playing = False
 
     def compose(self) -> ComposeResult:
-        yield Label("Pad 1:", id="selected-pad-label")
+        with Horizontal(id="controls"):
+            yield Label("Vol: 100%", id="volume-label")
+            yield Label("Pad 1:", id="selected-pad-label")
         with Horizontal(id="playhead-row"):
             for i in range(16):
                 yield Label(" ", id=f"ph_{i}")
@@ -169,6 +171,7 @@ class DrumMachine(App):
 
     def on_mount(self):
         self.log_widget = self.query_one("#log", Log)
+        self.volume_label = self.query_one("#volume-label", Label)
         self.load_samples()
         self.select_pad(0)
         self.update_step_display()
@@ -365,6 +368,7 @@ class DrumMachine(App):
                 self.active_pads.discard(pad_num)
         elif msg.type == "control_change" and msg.control == 3:
             self.master_volume = msg.value / 127.0
+            self.volume_label.update(f"Vol: {int(self.master_volume * 100)}%")
         elif msg.type == "control_change" and msg.control == 9:
             old = self.cursor_step
             self.cursor_step = int(msg.value * 15 / 127)
