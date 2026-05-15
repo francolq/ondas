@@ -279,21 +279,20 @@ class DrumMachine(App):
             self.step_samples_accumulated -= SAMPLES_PER_STEP
             self.current_step = (self.current_step + 1) % 16
             triggered = True
-            pad, level = self.steps[self.current_step]
-            if level > 0:
-                sample = self.samples[pad]
-                if sample is not None:
-                    with self.audio_lock:
-                        self.current_voice = Voice(sample.copy(), level / 100)
+
+            level = 0
             if self.pending_trigger is not None:
-                pad_num, velocity = self.pending_trigger
+                # step is overriden by pressed pad
+                pad, level = self.pending_trigger
                 if not self.pending_trigger_on:
                     # note was released
                     self.pending_trigger = None
-                sample = self.samples[pad_num]
-                if sample is not None:
-                    with self.audio_lock:
-                        self.current_voice = Voice(sample.copy(), velocity / 100)
+            else:
+                pad, level = self.steps[self.current_step]
+            if level > 0:
+                sample = self.samples[pad]
+                with self.audio_lock:
+                    self.current_voice = Voice(sample.copy(), level / 100)
         if triggered:
             # Schedule UI refresh on main thread (audio thread can't touch Textual directly)
             self.call_from_thread(self._update_playhead, prev_step, self.current_step)
