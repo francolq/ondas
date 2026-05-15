@@ -129,6 +129,8 @@ class DrumMachine(App):
         self.current_voice = None
         self.master_volume = 1.0
         self.audio_lock = threading.Lock()
+        self.quantize = True
+        self.pending_trigger = None
 
         # Sequencer state — owned by audio callback thread
         self.step_samples_accumulated = 0
@@ -150,7 +152,9 @@ class DrumMachine(App):
         for row in range(4):
             for col in range(4):
                 old_idx = (3 - row) * 4 + col
-                if old_idx < 15:
+                if old_idx == 14:
+                    label = "14\nQ: ON"
+                elif old_idx < 15:
                     if old_idx < len(self.sample_files):
                         name = os.path.splitext(os.path.basename(self.sample_files[old_idx]))[0]
                         label = f"{old_idx+1}\n{name}" if len(name) <= 8 else f"{old_idx+1}\n{name[:8]}…"
@@ -205,6 +209,10 @@ class DrumMachine(App):
 
     def trigger_pad(self, pad_num, velocity=100):
         if 0 <= pad_num < len(self.samples) and self.samples[pad_num] is not None:
+            if self.quantize and self.playing:
+                self.log_widget.write(f"Pad {pad_num + 1} quantized (vel={velocity})\n")
+                self.pending_trigger = (pad_num, velocity)
+                return
             self.log_widget.write(f"Pad {pad_num + 1} triggered (vel={velocity})\n")
             button = self.query_one(f"#pad_{pad_num}", Button)
             button.add_class("active")
@@ -227,6 +235,11 @@ class DrumMachine(App):
         self._update_step_button(step_num)
         self._update_voice_cell(step_num)
 
+    def toggle_quantize(self):
+        self.quantize = not self.quantize
+        self.query_one("#pad_14", Button).label = "14\nQ: ON" if self.quantize else "14\nQ:OFF"
+        self.log_widget.write(f"Quantization {'ON' if self.quantize else 'OFF'}\n")
+
     def toggle_play(self):
         if self.playing:
             prev = self.current_step
@@ -238,6 +251,7 @@ class DrumMachine(App):
             self.playing = True
             self.current_step = -1
             self.step_samples_accumulated = SAMPLES_PER_STEP
+            self.pending_trigger = None
             self.query_one("#pad_15", Button).label = "16\n■Stop"
 
     def audio_callback(self, outdata, frames, time, status):
@@ -268,7 +282,15 @@ class DrumMachine(App):
                 if sample is not None:
                     with self.audio_lock:
                         self.current_voice = Voice(sample.copy(), level / 100)
+            if self.pending_trigger is not None:
+                pad_num, velocity = self.pending_trigger
+                self.pending_trigger = None
+                sample = self.samples[pad_num]
+                if sample is not None:
+                    with self.audio_lock:
+                        self.current_voice = Voice(sample.copy(), velocity / 100)
         if triggered:
+            # Schedule UI refresh on main thread (audio thread can't touch Textual directly)
             self.call_from_thread(self._update_playhead, prev_step, self.current_step)
 
     def _set_playhead(self, i, visible):
@@ -313,6 +335,8 @@ class DrumMachine(App):
             pad_num = int(button_id.replace("pad_", ""))
             if pad_num == 15:
                 self.toggle_play()
+            elif pad_num == 14:
+                self.toggle_quantize()
             else:
                 self.select_pad(pad_num)
                 self.trigger_pad(pad_num)
@@ -325,6 +349,8 @@ class DrumMachine(App):
             pad_num = NOTE_TO_PAD.get(msg.note)
             if pad_num == 15:
                 self.toggle_play()
+            elif pad_num == 14:
+                self.toggle_quantize()
             elif pad_num is not None:
                 self.trigger_pad(pad_num, msg.velocity)
                 self.active_pads.add(pad_num)
