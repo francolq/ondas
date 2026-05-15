@@ -9,6 +9,7 @@ import mido
 import sys
 import argparse
 import os
+import random
 import threading
 
 SAMPLE_RATE = 44100
@@ -117,6 +118,7 @@ class DrumMachine(App):
         self.active_pads = set()
         self.samples = []
         self.sample_srs = []
+        self.valid_pads = []
         self.steps = [(-1, 0) for _ in range(16)]
         self._auto_start = pattern is not None
         if pattern:
@@ -128,6 +130,7 @@ class DrumMachine(App):
         self.stream = None
         self.current_voice = None
         self.master_volume = 1.0
+        self.rand = 0.0
         self.audio_lock = threading.Lock()
         self.quantize = True
         self.pending_trigger = None
@@ -141,6 +144,7 @@ class DrumMachine(App):
     def compose(self) -> ComposeResult:
         with Horizontal(id="controls"):
             yield Label("Vol: 100%", id="volume-label")
+            yield Label("Ran:  0%", id="rand-label")
             yield Label("Pad 1:", id="selected-pad-label")
         with Horizontal(id="playhead-row"):
             for i in range(16):
@@ -172,6 +176,7 @@ class DrumMachine(App):
     def on_mount(self):
         self.log_widget = self.query_one("#log", Log)
         self.volume_label = self.query_one("#volume-label", Label)
+        self.rand_label = self.query_one("#rand-label", Label)
         self.load_samples()
         self.select_pad(0)
         self.update_step_display()
@@ -202,6 +207,7 @@ class DrumMachine(App):
                 self.log_widget.write(f"Pad {i+1}: failed to load {path}: {e}\n")
                 self.samples.append(None)
                 self.sample_srs.append(None)
+        self.valid_pads = [i for i, s in enumerate(self.samples) if s is not None]
 
     def select_pad(self, pad_num):
         self.selected_pad = pad_num
@@ -292,6 +298,9 @@ class DrumMachine(App):
                     self.pending_trigger = None
             else:
                 pad, level = self.steps[self.current_step]
+                if level > 0 and self.rand > 0 and random.random() < self.rand:
+                    if self.valid_pads:
+                        pad = random.choice(self.valid_pads)
             if level > 0:
                 sample = self.samples[pad]
                 with self.audio_lock:
@@ -370,6 +379,9 @@ class DrumMachine(App):
             self.master_volume = msg.value / 127.0
             self.volume_label.update(f"Vol: {int(self.master_volume * 100)}%")
         elif msg.type == "control_change" and msg.control == 9:
+            self.rand = msg.value / 127.0
+            self.rand_label.update(f"Ran: {int(self.rand * 100)}%")
+        elif msg.type == "control_change" and msg.control == 13:
             old = self.cursor_step
             self.cursor_step = int(msg.value * 15 / 127)
             self._update_step_button(old)
