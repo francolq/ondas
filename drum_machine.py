@@ -131,6 +131,7 @@ class DrumMachine(App):
         self.audio_lock = threading.Lock()
         self.quantize = True
         self.pending_trigger = None
+        self.pending_trigger_on = False
 
         # Sequencer state — owned by audio callback thread
         self.step_samples_accumulated = 0
@@ -212,6 +213,7 @@ class DrumMachine(App):
             if self.quantize and self.playing:
                 self.log_widget.write(f"Pad {pad_num + 1} quantized (vel={velocity})\n")
                 self.pending_trigger = (pad_num, velocity)
+                self.pending_trigger_on = True
                 return
             self.log_widget.write(f"Pad {pad_num + 1} triggered (vel={velocity})\n")
             button = self.query_one(f"#pad_{pad_num}", Button)
@@ -224,6 +226,7 @@ class DrumMachine(App):
         if 0 <= pad_num < 16:
             button = self.query_one(f"#pad_{pad_num}", Button)
             button.remove_class("active")
+            self.pending_trigger_on = False
 
     def toggle_step(self, step_num):
         pad, level = self.steps[step_num]
@@ -284,7 +287,9 @@ class DrumMachine(App):
                         self.current_voice = Voice(sample.copy(), level / 100)
             if self.pending_trigger is not None:
                 pad_num, velocity = self.pending_trigger
-                self.pending_trigger = None
+                if not self.pending_trigger_on:
+                    # note was released
+                    self.pending_trigger = None
                 sample = self.samples[pad_num]
                 if sample is not None:
                     with self.audio_lock:
