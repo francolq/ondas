@@ -1,5 +1,5 @@
 from textual.app import App, ComposeResult
-from textual.containers import Grid, Horizontal
+from textual.containers import Grid, Horizontal, Vertical
 from textual.widgets import Button, Label, Log
 from textual import on
 import sounddevice as sd
@@ -32,6 +32,13 @@ class Voice:
 
 
 class DrumMachine(App):
+    # Class attribute that Textual's framework reads automatically:
+    # When the user presses v, Textual looks up the action name toggle_view and
+    # calls the method named action_ + that name, i.e. action_toggle_view
+    BINDINGS = [
+        ("v", "toggle_view", "Toggle View"),
+    ]
+
     CSS = """
     DrumMachine {
         align: center middle;
@@ -78,6 +85,21 @@ class DrumMachine(App):
         padding: 0;
         margin: 0 0;
         border: none tall;
+    }
+    #history {
+        width: 80%;
+        height: 4;
+    }
+    #history Horizontal {
+        width: 100%;
+        height: 1;
+    }
+    #history Label {
+        width: 5;
+        min-width: 5;
+        height: 1;
+        content-align: center top;
+        color: #888;
     }
     Button.step-off {
         background: #444;
@@ -135,6 +157,13 @@ class DrumMachine(App):
         self.quantize = True
         self.pending_trigger = None
         self.pending_trigger_on = False
+        self.steps_view = False
+        self.bar_steps = [None] * 16
+
+        # history is a list of rows, where each row is a
+        # 16-element list, one entry per step of a completed bar
+        # each entry is a 0-based pad index or None
+        self.history = []
 
         # Sequencer state — owned by audio callback thread
         self.step_samples_accumulated = 0
@@ -146,6 +175,7 @@ class DrumMachine(App):
             yield Label("Vol: 100%", id="volume-label")
             yield Label("Ran:  0%", id="rand-label")
             yield Label("Pad 1:", id="selected-pad-label")
+            yield Label("View: PADS", id="view-label")
         with Horizontal(id="playhead-row"):
             for i in range(16):
                 yield Label(" ", id=f"ph_{i}")
@@ -155,6 +185,11 @@ class DrumMachine(App):
         with Horizontal(id="steps-row"):
             for i in range(16):
                 yield Button(" ", id=f"step_{i}", classes="step-off")
+        with Vertical(id="history"):
+            for row in range(4):
+                with Horizontal(id=f"hist-row-{row}"):
+                    for i in range(16):
+                        yield Label(" ", id=f"hist_{row}_{i}")
         buttons = []
         for row in range(4):
             for col in range(4):
@@ -170,8 +205,37 @@ class DrumMachine(App):
                 else:
                     label = "16\n▶Play"
                 buttons.append(Button(label, id=f"pad_{old_idx}"))
-        yield Grid(*buttons)
+        yield Grid(*buttons, id="pads-grid")
         yield Log("Drum machine ready.", id="log")
+
+    # Textual action bound to the v key via class attribute BINDINGS
+    def action_toggle_view(self):
+        self.steps_view = not self.steps_view
+        self._apply_view()
+        self.log_widget.write(f"View: {'STEPS' if self.steps_view else 'PADS'}\n")
+
+    def _apply_view(self):
+        view_label = self.query_one("#view-label", Label)
+        pads = self.query_one("#pads-grid", Grid)
+        history = self.query_one("#history", Vertical)
+        if self.steps_view:
+            pads.display = False
+            history.display = True
+            view_label.update("View: STEPS")
+        else:
+            pads.display = True
+            history.display = False
+            view_label.update("View: PADS")
+
+    def _refresh_history(self):
+        for row in range(4):
+            for i in range(16):
+                label = self.query_one(f"#hist_{row}_{i}", Label)
+                if row < len(self.history):
+                    pad = self.history[row][i]
+                    label.update(str(pad + 1) if pad is not None else " ")
+                else:
+                    label.update(" ")
 
     def on_mount(self):
         self.log_widget = self.query_one("#log", Log)
@@ -180,6 +244,7 @@ class DrumMachine(App):
         self.load_samples()
         self.select_pad(0)
         self.update_step_display()
+        self._apply_view()
         self.stream = sd.OutputStream(
             channels=1,
             samplerate=SAMPLE_RATE,
@@ -264,6 +329,7 @@ class DrumMachine(App):
             self.current_step = -1
             self.step_samples_accumulated = SAMPLES_PER_STEP
             self.pending_trigger = None
+            self.bar_steps = [None] * 16
             self.query_one("#pad_15", Button).label = "16\n■Stop"
 
     def audio_callback(self, outdata, frames, time, status):
@@ -286,7 +352,14 @@ class DrumMachine(App):
         prev_step = self.current_step
         while self.playing and self.step_samples_accumulated >= SAMPLES_PER_STEP:
             self.step_samples_accumulated -= SAMPLES_PER_STEP
+            prev = self.current_step
             self.current_step = (self.current_step + 1) % 16
+            if prev == 15 and self.current_step == 0:
+                # a bar (steps 0..15) just completed: push it into history
+                self.history.insert(0, self.bar_steps)
+                del self.history[4:]
+                self.bar_steps = [None] * 16
+                self.call_from_thread(self._refresh_history)
             triggered = True
 
             level = 0
@@ -305,6 +378,7 @@ class DrumMachine(App):
                 sample = self.samples[pad]
                 with self.audio_lock:
                     self.current_voice = Voice(sample.copy(), level / 100)
+                self.bar_steps[self.current_step] = pad
         if triggered:
             # Schedule UI refresh on main thread (audio thread can't touch Textual directly)
             self.call_from_thread(self._update_playhead, prev_step, self.current_step)
