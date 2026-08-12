@@ -37,6 +37,7 @@ class DrumMachine(App):
     # calls the method named action_ + that name, i.e. action_toggle_view
     BINDINGS = [
         ("v", "toggle_view", "Toggle View"),
+        ("s", "save_pattern", "Save Pattern"),
     ]
 
     CSS = """
@@ -88,7 +89,12 @@ class DrumMachine(App):
     }
     #history {
         width: 80%;
-        height: 4;
+    }
+    #history-title {
+        width: auto;
+        height: 1;
+        color: #aaa;
+        text-style: bold;
     }
     #history Horizontal {
         width: 100%;
@@ -100,6 +106,26 @@ class DrumMachine(App):
         height: 1;
         content-align: center top;
         color: #888;
+    }
+    #saved-patterns {
+        width: 80%;
+    }
+    #saved-patterns-title {
+        width: auto;
+        height: 1;
+        color: #aac;
+        text-style: bold;
+    }
+    #saved-patterns Horizontal {
+        width: 100%;
+        height: 1;
+    }
+    #saved-patterns Label {
+        width: 5;
+        min-width: 5;
+        height: 1;
+        content-align: center top;
+        color: #88a;
     }
     Button.step-off {
         background: #444;
@@ -164,6 +190,8 @@ class DrumMachine(App):
         # 16-element list, one entry per step of a completed bar
         # each entry is a 0-based pad index or None
         self.history = []
+        initial_pattern = [pad if pad >= 0 else None for pad, level in self.steps]
+        self.saved_patterns = [list(initial_pattern) for _ in range(4)]
 
         # Sequencer state — owned by audio callback thread
         self.step_samples_accumulated = 0
@@ -186,10 +214,17 @@ class DrumMachine(App):
             for i in range(16):
                 yield Button(" ", id=f"step_{i}", classes="step-off")
         with Vertical(id="history"):
+            yield Label("History", id="history-title")
             for row in range(4):
                 with Horizontal(id=f"hist-row-{row}"):
                     for i in range(16):
                         yield Label(" ", id=f"hist_{row}_{i}")
+        with Vertical(id="saved-patterns"):
+            yield Label("Saved Patterns", id="saved-patterns-title")
+            for row in range(4):
+                with Horizontal(id=f"spat-row-{row}"):
+                    for i in range(16):
+                        yield Label(" ", id=f"spat_{row}_{i}")
         buttons = []
         for row in range(4):
             for col in range(4):
@@ -214,17 +249,29 @@ class DrumMachine(App):
         self._apply_view()
         self.log_widget.write(f"View: {'STEPS' if self.steps_view else 'PADS'}\n")
 
+    def action_save_pattern(self):
+        if not self.history:
+            self.log_widget.write("Nothing saved: no completed bar in history\n")
+            return
+        self.saved_patterns.insert(0, list(self.history[0]))
+        del self.saved_patterns[4:]
+        self._refresh_saved_patterns()
+        self.log_widget.write(f"Saved bar to saved_patterns ({len(self.saved_patterns)} saved)\n")
+
     def _apply_view(self):
         view_label = self.query_one("#view-label", Label)
         pads = self.query_one("#pads-grid", Grid)
         history = self.query_one("#history", Vertical)
+        saved_patterns = self.query_one("#saved-patterns", Vertical)
         if self.steps_view:
             pads.display = False
             history.display = True
+            saved_patterns.display = True
             view_label.update("View: STEPS")
         else:
             pads.display = True
             history.display = False
+            saved_patterns.display = False
             view_label.update("View: PADS")
 
     def _refresh_history(self):
@@ -237,6 +284,16 @@ class DrumMachine(App):
                 else:
                     label.update(" ")
 
+    def _refresh_saved_patterns(self):
+        for row in range(4):
+            for i in range(16):
+                label = self.query_one(f"#spat_{row}_{i}", Label)
+                if row < len(self.saved_patterns):
+                    pad = self.saved_patterns[row][i]
+                    label.update(str(pad + 1) if pad is not None else " ")
+                else:
+                    label.update(" ")
+
     def on_mount(self):
         self.log_widget = self.query_one("#log", Log)
         self.volume_label = self.query_one("#volume-label", Label)
@@ -245,6 +302,7 @@ class DrumMachine(App):
         self.select_pad(0)
         self.update_step_display()
         self._apply_view()
+        self._refresh_saved_patterns()
         self.stream = sd.OutputStream(
             channels=1,
             samplerate=SAMPLE_RATE,
