@@ -171,10 +171,11 @@ class DrumMachine(App):
         super().__init__()
         self.midi_port = midi_port
         self.sample_files = sample_files
+        self.fatal_error = None
+        # pad display names, computed once from the file names
+        self.pad_names = [os.path.splitext(os.path.basename(p))[0] for p in sample_files]
         self.active_pads = set()
         self.samples = []
-        self.sample_srs = []
-        self.valid_pads = []
         self.steps = [(-1, 0) for _ in range(16)]
         self._auto_start = pattern is not None
         if pattern:
@@ -243,8 +244,8 @@ class DrumMachine(App):
                 elif pad_idx == SELECT_ALL_PAD:
                     label = f"{SELECT_ALL_PAD+1}\nAll:OFF"
                 elif pad_idx < PLAY_PAD:
-                    if pad_idx < len(self.sample_files):
-                        name = os.path.splitext(os.path.basename(self.sample_files[pad_idx]))[0]
+                    if pad_idx < len(self.pad_names):
+                        name = self.pad_names[pad_idx]
                         label = f"{pad_idx+1}\n{name}" if len(name) <= 8 else f"{pad_idx+1}\n{name[:8]}…"
                     else:
                         label = f"{pad_idx+1}"
@@ -371,29 +372,30 @@ class DrumMachine(App):
                 if len(sample.shape) > 1:
                     sample = sample.mean(axis=1)
                 if sr != SAMPLE_RATE:
+                    # resample by linear interpolation
+                    # (naive resampler: when downsampling high frequencies can alias)
                     old = np.arange(len(sample))
                     new = np.linspace(0, len(sample) - 1, int(len(sample) * SAMPLE_RATE / sr))
                     sample = np.interp(new, old, sample).astype(np.float32)
                 self.samples.append(sample)
-                self.sample_srs.append(SAMPLE_RATE)
                 name = os.path.basename(path)
                 self.log_widget.write(f"Loaded pad {i+1}: {name} ({len(sample)} samples, resampled to {SAMPLE_RATE} Hz)\n")
             except Exception as e:
-                self.log_widget.write(f"Pad {i+1}: failed to load {path}: {e}\n")
-                self.samples.append(None)
-                self.sample_srs.append(None)
-        self.valid_pads = [i for i, s in enumerate(self.samples) if s is not None]
+                self.fatal_error = f"Pad {i+1}: failed to load {path}: {e}"
+                self.log_widget.write(self.fatal_error + "\n")
+                self.exit()
+                return
 
     def select_pad(self, pad_num):
         self.selected_pad = pad_num
-        if pad_num < len(self.sample_files):
-            name = os.path.splitext(os.path.basename(self.sample_files[pad_num]))[0]
+        if pad_num < len(self.pad_names):
+            name = self.pad_names[pad_num]
             self.query_one("#selected-pad-label", Label).update(f"Pad {pad_num+1}: {name}")
         else:
             self.query_one("#selected-pad-label", Label).update(f"Pad {pad_num+1}")
 
     def trigger_pad(self, pad_num, velocity=100):
-        if 0 <= pad_num < len(self.samples) and self.samples[pad_num] is not None:
+        if 0 <= pad_num < len(self.samples):
             if self.quantize and self.playing:
                 self.log_widget.write(f"Pad {pad_num + 1} quantized (vel={velocity})\n")
                 self.pending_trigger = (pad_num, velocity)
@@ -491,9 +493,14 @@ class DrumMachine(App):
             else:
                 pad, level = self.steps[self.current_step]
                 if level > 0 and self.rand > 0 and random.random() < self.rand:
-                    if self.valid_pads:
-                        pad = random.choice(self.valid_pads)
-            if level > 0:
+                    # random swap: pick a saved pattern uniformly, use its pad
+                    # at the current step (skip if the saved step is empty)
+                    if self.saved_patterns:
+                        pattern = random.choice(self.saved_patterns)
+                        candidate = pattern[self.current_step]
+                        if candidate is not None:
+                            pad = candidate
+            if level > 0 and 0 <= pad < len(self.samples):
                 sample = self.samples[pad]
                 with self.audio_lock:
                     self.current_voice = Voice(sample.copy(), level / 100)
@@ -634,3 +641,6 @@ if __name__ == "__main__":
     if midi_port:
         midi_port.callback = app.on_midi
     app.run()
+    if app.fatal_error:
+        print(app.fatal_error, file=sys.stderr)
+        sys.exit(1)
