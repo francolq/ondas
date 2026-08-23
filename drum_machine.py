@@ -22,6 +22,8 @@ LEVELS = [0, 25, 50, 75, 100]
 # (stored 0-indexed, so pad 16 is index 15).
 QUANTIZE_PAD = 14
 PLAY_PAD = 15
+# Pad 13 (index 12) toggles cursor selection of all steps at once.
+SELECT_ALL_PAD = 12
 
 PAD_TO_NOTE = dict((i, 36 + i) for i in range(16))
 NOTE_TO_PAD = {v: k for k, v in PAD_TO_NOTE.items()}
@@ -181,6 +183,7 @@ class DrumMachine(App):
                     self.steps[step] = (pad - 1, 100)
         self.selected_pad = 0
         self.cursor_step = 0
+        self.select_all = False
         self.stream = None
         self.current_voice = None
         self.master_volume = 1.0
@@ -237,6 +240,8 @@ class DrumMachine(App):
                 pad_idx = (3 - row) * 4 + col
                 if pad_idx == QUANTIZE_PAD:
                     label = f"{QUANTIZE_PAD+1}\nQ: ON"
+                elif pad_idx == SELECT_ALL_PAD:
+                    label = f"{SELECT_ALL_PAD+1}\nAll:OFF"
                 elif pad_idx < PLAY_PAD:
                     if pad_idx < len(self.sample_files):
                         name = os.path.splitext(os.path.basename(self.sample_files[pad_idx]))[0]
@@ -422,6 +427,15 @@ class DrumMachine(App):
         self.query_one(f"#pad_{QUANTIZE_PAD}", Button).label = f"{QUANTIZE_PAD+1}\nQ: ON" if self.quantize else f"{QUANTIZE_PAD+1}\nQ:OFF"
         self.log_widget.write(f"Quantization {'ON' if self.quantize else 'OFF'}\n")
 
+    def toggle_select_all(self):
+        self.select_all = not self.select_all
+        self.query_one(f"#pad_{SELECT_ALL_PAD}", Button).label = (
+            f"{SELECT_ALL_PAD+1}\nAll: ON" if self.select_all
+            else f"{SELECT_ALL_PAD+1}\nAll:OFF")
+        for i in range(16):
+            self._update_step_button(i)
+        self.log_widget.write(f"Select all steps {'ON' if self.select_all else 'OFF'}\n")
+
     def toggle_play(self):
         if self.playing:
             prev = self.current_step
@@ -505,7 +519,7 @@ class DrumMachine(App):
             button.add_class("step-on")
         else:
             button.add_class("step-off")
-        if i == self.cursor_step:
+        if i == self.cursor_step or self.select_all:
             button.add_class("step-cursor")
 
     def _update_voice_cell(self, step):
@@ -532,6 +546,8 @@ class DrumMachine(App):
                 self.toggle_play()
             elif pad_num == QUANTIZE_PAD:
                 self.toggle_quantize()
+            elif pad_num == SELECT_ALL_PAD:
+                self.toggle_select_all()
             else:
                 self.select_pad(pad_num)
                 self.trigger_pad(pad_num)
@@ -546,6 +562,8 @@ class DrumMachine(App):
                 self.toggle_play()
             elif pad_num == QUANTIZE_PAD:
                 self.toggle_quantize()
+            elif pad_num == SELECT_ALL_PAD:
+                self.toggle_select_all()
             elif pad_num is not None:
                 self.trigger_pad(pad_num, msg.velocity)
                 self.active_pads.add(pad_num)
@@ -569,9 +587,12 @@ class DrumMachine(App):
             level = int(msg.value / 26) * 25
             if level > 100:
                 level = 100
-            self.steps[self.cursor_step] = (self.selected_pad, level) if level > 0 else (-1, 0)
-            self._update_step_button(self.cursor_step)
-            self._update_voice_cell(self.cursor_step)
+            value = (self.selected_pad, level) if level > 0 else (-1, 0)
+            targets = range(16) if self.select_all else (self.cursor_step,)
+            for step in targets:
+                self.steps[step] = value
+                self._update_step_button(step)
+                self._update_voice_cell(step)
         elif msg.type == "control_change" and msg.control == 15:
             self.select_pad(int(msg.value * 15 / 127))
 
