@@ -18,6 +18,11 @@ SAMPLES_PER_STEP = int(SAMPLE_RATE * 60 / BPM / 4)
 LEVEL_CHARS = {0: "0", 25: "2", 50: "5", 75: "7", 100: "1"}
 LEVELS = [0, 25, 50, 75, 100]
 
+# Pads 14 and 16 are not sounds: 14 = quantize toggle, 16 = play/stop
+# (stored 0-indexed, so pad 16 is index 15).
+QUANTIZE_PAD = 14
+PLAY_PAD = 15
+
 PAD_TO_NOTE = dict((i, 36 + i) for i in range(16))
 NOTE_TO_PAD = {v: k for k, v in PAD_TO_NOTE.items()}
 
@@ -229,18 +234,18 @@ class DrumMachine(App):
         buttons = []
         for row in range(4):
             for col in range(4):
-                old_idx = (3 - row) * 4 + col
-                if old_idx == 14:
-                    label = "14\nQ: ON"
-                elif old_idx < 15:
-                    if old_idx < len(self.sample_files):
-                        name = os.path.splitext(os.path.basename(self.sample_files[old_idx]))[0]
-                        label = f"{old_idx+1}\n{name}" if len(name) <= 8 else f"{old_idx+1}\n{name[:8]}…"
+                pad_idx = (3 - row) * 4 + col
+                if pad_idx == QUANTIZE_PAD:
+                    label = f"{QUANTIZE_PAD+1}\nQ: ON"
+                elif pad_idx < PLAY_PAD:
+                    if pad_idx < len(self.sample_files):
+                        name = os.path.splitext(os.path.basename(self.sample_files[pad_idx]))[0]
+                        label = f"{pad_idx+1}\n{name}" if len(name) <= 8 else f"{pad_idx+1}\n{name[:8]}…"
                     else:
-                        label = f"{old_idx+1}"
+                        label = f"{pad_idx+1}"
                 else:
-                    label = "16\n▶Play"
-                buttons.append(Button(label, id=f"pad_{old_idx}"))
+                    label = f"{PLAY_PAD+1}\n▶Play"
+                buttons.append(Button(label, id=f"pad_{pad_idx}"))
         yield Grid(*buttons, id="pads-grid")
         yield Log("Drum machine ready.", id="log")
 
@@ -414,7 +419,7 @@ class DrumMachine(App):
 
     def toggle_quantize(self):
         self.quantize = not self.quantize
-        self.query_one("#pad_14", Button).label = "14\nQ: ON" if self.quantize else "14\nQ:OFF"
+        self.query_one(f"#pad_{QUANTIZE_PAD}", Button).label = f"{QUANTIZE_PAD+1}\nQ: ON" if self.quantize else f"{QUANTIZE_PAD+1}\nQ:OFF"
         self.log_widget.write(f"Quantization {'ON' if self.quantize else 'OFF'}\n")
 
     def toggle_play(self):
@@ -423,14 +428,14 @@ class DrumMachine(App):
             self.playing = False
             if prev >= 0:
                 self._set_playhead(prev, False)
-            self.query_one("#pad_15", Button).label = "16\n▶Play"
+            self.query_one(f"#pad_{PLAY_PAD}", Button).label = f"{PLAY_PAD+1}\n▶Play"
         else:
             self.playing = True
             self.current_step = -1
             self.step_samples_accumulated = SAMPLES_PER_STEP
             self.pending_trigger = None
             self.bar_steps = [None] * 16
-            self.query_one("#pad_15", Button).label = "16\n■Stop"
+            self.query_one(f"#pad_{PLAY_PAD}", Button).label = f"{PLAY_PAD+1}\n■Stop"
 
     def audio_callback(self, outdata, frames, time, status):
         outdata.fill(0)
@@ -523,9 +528,9 @@ class DrumMachine(App):
             return
         if button_id.startswith("pad_"):
             pad_num = int(button_id.replace("pad_", ""))
-            if pad_num == 15:
+            if pad_num == PLAY_PAD:
                 self.toggle_play()
-            elif pad_num == 14:
+            elif pad_num == QUANTIZE_PAD:
                 self.toggle_quantize()
             else:
                 self.select_pad(pad_num)
@@ -537,9 +542,9 @@ class DrumMachine(App):
     def on_midi(self, msg):
         if msg.type == "note_on" and msg.velocity > 0:
             pad_num = NOTE_TO_PAD.get(msg.note)
-            if pad_num == 15:
+            if pad_num == PLAY_PAD:
                 self.toggle_play()
-            elif pad_num == 14:
+            elif pad_num == QUANTIZE_PAD:
                 self.toggle_quantize()
             elif pad_num is not None:
                 self.trigger_pad(pad_num, msg.velocity)
