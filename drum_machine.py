@@ -395,24 +395,26 @@ class DrumMachine(App):
             self.query_one("#selected-pad-label", Label).update(f"Pad {pad_num+1}")
 
     def trigger_pad(self, pad_num, velocity=100):
-        if 0 <= pad_num < len(self.samples):
-            if self.quantize and self.playing:
-                self.log_widget.write(f"Pad {pad_num + 1} quantized (vel={velocity})\n")
-                self.pending_trigger = (pad_num, velocity)
-                self.pending_trigger_on = True
-                return
-            self.log_widget.write(f"Pad {pad_num + 1} triggered (vel={velocity})\n")
-            button = self.query_one(f"#pad_{pad_num}", Button)
-            button.add_class("active")
-            sample_data = self.samples[pad_num] * (velocity / 127)
-            with self.audio_lock:
-                self.current_voice = Voice(sample_data, 1.0)
+        if not (0 <= pad_num < len(self.samples)):
+            return
+        if self.quantize and self.playing:
+            self.log_widget.write(f"Pad {pad_num + 1} quantized (vel={velocity})\n")
+            self.pending_trigger = (pad_num, velocity)
+            self.pending_trigger_on = True
+            return
+        self.log_widget.write(f"Pad {pad_num + 1} triggered (vel={velocity})\n")
+        button = self.query_one(f"#pad_{pad_num}", Button)
+        button.add_class("active")
+        sample_data = self.samples[pad_num] * (velocity / 127)
+        with self.audio_lock:
+            self.current_voice = Voice(sample_data, 1.0)
 
     def release_pad(self, pad_num):
-        if 0 <= pad_num < 16:
-            button = self.query_one(f"#pad_{pad_num}", Button)
-            button.remove_class("active")
-            self.pending_trigger_on = False
+        if not (0 <= pad_num < 16):
+            return
+        button = self.query_one(f"#pad_{pad_num}", Button)
+        button.remove_class("active")
+        self.pending_trigger_on = False
 
     def toggle_step(self, step_num):
         pad, level = self.steps[step_num]
