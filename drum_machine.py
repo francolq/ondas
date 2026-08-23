@@ -38,6 +38,7 @@ class DrumMachine(App):
     BINDINGS = [
         ("v", "toggle_view", "Toggle View"),
         ("s", "save_pattern", "Save Pattern"),
+        ("e", "export_midi", "Export MIDI"),
     ]
 
     CSS = """
@@ -257,6 +258,47 @@ class DrumMachine(App):
         del self.saved_patterns[4:]
         self._refresh_saved_patterns()
         self.log_widget.write(f"Saved bar to saved_patterns ({len(self.saved_patterns)} saved)\n")
+
+    def action_export_midi(self):
+        # Export all saved patterns as consecutive bars into one MIDI file.
+        # Each saved pattern is a 16-element list of 0-based pad indices or None.
+        # Pad p -> note PAD_TO_NOTE[p] (36 + p); fixed velocity since saved
+        # patterns carry no per-step level.
+        VELOCITY = 100
+        # ticks per beat; one step = a 16th note, one bar = 16 steps = 4 beats
+        tpq = 480
+        step_ticks = tpq // 4
+        note_ticks = step_ticks  # each hit lasts one step
+
+        mid = mido.MidiFile(ticks_per_beat=tpq)
+        track = mido.MidiTrack()
+        mid.tracks.append(track)
+        track.append(mido.MetaMessage("set_tempo",
+                                      tempo=mido.bpm2tempo(BPM), time=0))
+
+        delta = 0  # ticks since last emitted event
+        for pattern in self.saved_patterns:
+            for step in range(16):
+                pad = pattern[step] if step < len(pattern) else None
+                if pad is not None:
+                    note = PAD_TO_NOTE[pad]
+                    track.append(mido.Message("note_on", note=note,
+                                              velocity=VELOCITY, time=delta))
+                    track.append(mido.Message("note_off", note=note,
+                                              velocity=0, time=note_ticks))
+                    delta = step_ticks - note_ticks
+                else:
+                    delta += step_ticks
+
+        base = "pattern"
+        n = 0
+        path = f"{base}.mid"
+        while os.path.exists(path):
+            n += 1
+            path = f"{base}_{n}.mid"
+        mid.save(path)
+        self.log_widget.write(
+            f"Exported {len(self.saved_patterns)} saved pattern(s) to {path}\n")
 
     def _apply_view(self):
         view_label = self.query_one("#view-label", Label)
