@@ -41,6 +41,9 @@ class Voice:
 
 
 class DrumMachine(App):
+    # Don't auto-focus the first focusable widget on mount (the step_0 button),
+    # which drew a focus ring that looked like a selected step
+    AUTO_FOCUS = None
     # Class attribute that Textual's framework reads automatically:
     # When the user presses v, Textual looks up the action name toggle_view and
     # calls the method named action_ + that name, i.e. action_toggle_view
@@ -185,7 +188,8 @@ class DrumMachine(App):
                 if 1 <= pad <= 16:
                     self.steps[step] = (pad - 1, 100)
         self.selected_pad = 0
-        self.cursor_step = 0
+        # -1 = no step selected (e.g. by CC13) yet
+        self.cursor_step = -1
         self.select_all = False
         self.stream = None
         self.current_voice = None
@@ -408,8 +412,13 @@ class DrumMachine(App):
             return
         self.log_widget.write(f"Pad {pad_num + 1} triggered (vel={velocity})\n")
         if self.record:
-            target = self.current_step if self.playing else self.cursor_step
-            self._record_hit(pad_num, velocity, target)
+            # a selected cursor step wins over the playing step
+            if self.cursor_step >= 0:
+                self._record_hit(pad_num, velocity, self.cursor_step)
+            elif self.playing:
+                self._record_hit(pad_num, velocity, self.current_step)
+            else:
+                self.log_widget.write("No cursor step selected: hit not recorded\n")
         button = self.query_one(f"#pad_{pad_num}", Button)
         button.add_class("active")
         sample_data = self.samples[pad_num] * (velocity / 127)
@@ -519,10 +528,11 @@ class DrumMachine(App):
                     # note was released
                     self.pending_trigger = None
                 if self.record:
-                    # live-record the hit into the step it lands on
+                    # live-record into cursor step when selected, else where it lands
+                    target = self.cursor_step if self.cursor_step >= 0 else self.current_step
                     hit_level = self._velocity_to_level(level)
-                    self.steps[self.current_step] = (pad, hit_level) if hit_level > 0 else (-1, 0)
-                    recorded.append((self.current_step, pad, level))
+                    self.steps[target] = (pad, hit_level) if hit_level > 0 else (-1, 0)
+                    recorded.append((target, pad, level))
             else:
                 pad, level = self.steps[self.current_step]
                 if level > 0 and self.rand > 0 and random.random() < self.rand:
@@ -535,6 +545,7 @@ class DrumMachine(App):
                             pad = candidate
             if level > 0 and 0 <= pad < len(self.samples):
                 sample = self.samples[pad]
+                # copy so each Voice owns its buffer (never aliases the shared pad sample)
                 with self.audio_lock:
                     self.current_voice = Voice(sample.copy(), level / 100)
                 self.bar_steps[self.current_step] = pad
@@ -633,15 +644,22 @@ class DrumMachine(App):
             self.rand_label.update(f"Ran: {int(self.rand * 100)}%")
         elif msg.type == "control_change" and msg.control == 13:
             old = self.cursor_step
-            self.cursor_step = int(msg.value * 15 / 127)
-            self._update_step_button(old)
-            self._update_step_button(self.cursor_step)
+            # knob extremes (0 and 127) deselect: no step selected;
+            # rounding (not truncating) keeps the end steps selectable
+            self.cursor_step = (
+                -1 if msg.value in (0, 127)
+                else int((msg.value - 1) * 15 / 125 + 0.5))
+            if old >= 0:
+                self._update_step_button(old)
+            if self.cursor_step >= 0:
+                self._update_step_button(self.cursor_step)
         elif msg.type == "control_change" and msg.control == 12:
             level = int(msg.value / 26) * 25
             if level > 100:
                 level = 100
             value = (self.selected_pad, level) if level > 0 else (-1, 0)
-            targets = range(16) if self.select_all else (self.cursor_step,)
+            targets = range(16) if self.select_all else (
+                (self.cursor_step,) if self.cursor_step >= 0 else ())
             for step in targets:
                 self.steps[step] = value
                 self._update_step_button(step)
