@@ -18,10 +18,12 @@ SAMPLES_PER_STEP = int(SAMPLE_RATE * 60 / BPM / 4)
 LEVEL_CHARS = {0: "0", 25: "2", 50: "5", 75: "7", 100: "1"}
 LEVELS = [0, 25, 50, 75, 100]
 
-# Pads 14 and 16 are not sounds: 14 = quantize toggle, 16 = play/stop
+# Pads 13, 14, 15 and 16 are not sounds: 13 toggles select-all-steps,
+# 14 = quantize toggle, 15 = play/stop, 16 = live-record toggle
 # (stored 0-indexed, so pad 16 is index 15).
-QUANTIZE_PAD = 14
-PLAY_PAD = 15
+QUANTIZE_PAD = 13
+PLAY_PAD = 14
+RECORD_PAD = 15
 # Pad 13 (index 12) toggles cursor selection of all steps at once.
 SELECT_ALL_PAD = 12
 
@@ -193,6 +195,7 @@ class DrumMachine(App):
         self.quantize = True
         self.pending_trigger = None
         self.pending_trigger_on = False
+        self.record = False
         self.steps_view = False
         self.bar_steps = [None] * 16
 
@@ -243,14 +246,15 @@ class DrumMachine(App):
                     label = f"{QUANTIZE_PAD+1}\nQ: ON"
                 elif pad_idx == SELECT_ALL_PAD:
                     label = f"{SELECT_ALL_PAD+1}\nAll:OFF"
-                elif pad_idx < PLAY_PAD:
-                    if pad_idx < len(self.pad_names):
-                        name = self.pad_names[pad_idx]
-                        label = f"{pad_idx+1}\n{name}" if len(name) <= 8 else f"{pad_idx+1}\n{name[:8]}…"
-                    else:
-                        label = f"{pad_idx+1}"
-                else:
+                elif pad_idx == PLAY_PAD:
                     label = f"{PLAY_PAD+1}\n▶Play"
+                elif pad_idx == RECORD_PAD:
+                    label = f"{RECORD_PAD+1}\nREC:OFF"
+                elif pad_idx < len(self.pad_names):
+                    name = self.pad_names[pad_idx]
+                    label = f"{pad_idx+1}\n{name}" if len(name) <= 8 else f"{pad_idx+1}\n{name[:8]}…"
+                else:
+                    label = f"{pad_idx+1}"
                 buttons.append(Button(label, id=f"pad_{pad_idx}"))
         yield Grid(*buttons, id="pads-grid")
         yield Log("Drum machine ready.", id="log")
@@ -403,6 +407,9 @@ class DrumMachine(App):
             self.pending_trigger_on = True
             return
         self.log_widget.write(f"Pad {pad_num + 1} triggered (vel={velocity})\n")
+        if self.record:
+            target = self.current_step if self.playing else self.cursor_step
+            self._record_hit(pad_num, velocity, target)
         button = self.query_one(f"#pad_{pad_num}", Button)
         button.add_class("active")
         sample_data = self.samples[pad_num] * (velocity / 127)
@@ -440,6 +447,24 @@ class DrumMachine(App):
             self._update_step_button(i)
         self.log_widget.write(f"Select all steps {'ON' if self.select_all else 'OFF'}\n")
 
+    def toggle_record(self):
+        self.record = not self.record
+        self.query_one(f"#pad_{RECORD_PAD}", Button).label = (
+            f"{RECORD_PAD+1}\nREC ON" if self.record
+            else f"{RECORD_PAD+1}\nREC:OFF")
+        self.log_widget.write(f"Record {'ON' if self.record else 'OFF'}\n")
+
+    def _velocity_to_level(self, velocity):
+        return min(int(velocity / 26) * 25, 100)
+
+    def _record_hit(self, pad_num, velocity, step):
+        level = self._velocity_to_level(velocity)
+        self.steps[step] = (pad_num, level) if level > 0 else (-1, 0)
+        self._update_step_button(step)
+        self._update_voice_cell(step)
+        self.log_widget.write(
+            f"Recorded pad {pad_num + 1} (vel={velocity}) into step {step}\n")
+
     def toggle_play(self):
         if self.playing:
             prev = self.current_step
@@ -473,6 +498,7 @@ class DrumMachine(App):
         self.step_samples_accumulated += frames
         triggered = False
         prev_step = self.current_step
+        recorded = []
         while self.playing and self.step_samples_accumulated >= SAMPLES_PER_STEP:
             self.step_samples_accumulated -= SAMPLES_PER_STEP
             prev = self.current_step
@@ -492,6 +518,11 @@ class DrumMachine(App):
                 if not self.pending_trigger_on:
                     # note was released
                     self.pending_trigger = None
+                if self.record:
+                    # live-record the hit into the step it lands on
+                    hit_level = self._velocity_to_level(level)
+                    self.steps[self.current_step] = (pad, hit_level) if hit_level > 0 else (-1, 0)
+                    recorded.append((self.current_step, pad, level))
             else:
                 pad, level = self.steps[self.current_step]
                 if level > 0 and self.rand > 0 and random.random() < self.rand:
@@ -510,6 +541,15 @@ class DrumMachine(App):
         if triggered:
             # Schedule UI refresh on main thread (audio thread can't touch Textual directly)
             self.call_from_thread(self._update_playhead, prev_step, self.current_step)
+        if recorded:
+            self.call_from_thread(self._apply_recorded_hits, recorded)
+
+    def _apply_recorded_hits(self, hits):
+        for step, pad_num, velocity in hits:
+            self._update_step_button(step)
+            self._update_voice_cell(step)
+            self.log_widget.write(
+                f"Recorded pad {pad_num + 1} (vel={velocity}) into step {step}\n")
 
     def _set_playhead(self, i, visible):
         self.query_one(f"#ph_{i}", Label).update("▼" if visible else " ")
@@ -557,6 +597,8 @@ class DrumMachine(App):
                 self.toggle_quantize()
             elif pad_num == SELECT_ALL_PAD:
                 self.toggle_select_all()
+            elif pad_num == RECORD_PAD:
+                self.toggle_record()
             else:
                 self.select_pad(pad_num)
                 self.trigger_pad(pad_num)
@@ -573,6 +615,8 @@ class DrumMachine(App):
                 self.toggle_quantize()
             elif pad_num == SELECT_ALL_PAD:
                 self.toggle_select_all()
+            elif pad_num == RECORD_PAD:
+                self.toggle_record()
             elif pad_num is not None:
                 self.trigger_pad(pad_num, msg.velocity)
                 self.active_pads.add(pad_num)
