@@ -421,9 +421,8 @@ class DrumMachine(App):
                 self.log_widget.write("No cursor step selected: hit not recorded\n")
         button = self.query_one(f"#pad_{pad_num}", Button)
         button.add_class("active")
-        sample_data = self.samples[pad_num] * (velocity / 127)
         with self.audio_lock:
-            self.current_voice = Voice(sample_data, 1.0)
+            self.current_voice = Voice(self.samples[pad_num], velocity / 127)
 
     def release_pad(self, pad_num):
         if not (0 <= pad_num < 16):
@@ -499,10 +498,9 @@ class DrumMachine(App):
             avail = min(frames, len(v.sample) - v.pos)
             if avail > 0:
                 end = v.pos + avail
-                outdata[0:avail, 0] = v.sample[v.pos:end] * v.volume * self.master_volume
+                gain = v.volume * self.master_volume
+                np.multiply(v.sample[v.pos:end], gain, out=outdata[0:avail, 0])
                 v.pos += avail
-
-        np.clip(outdata, -1.0, 1.0, out=outdata)
 
         self.step_samples_accumulated += frames
         triggered = False
@@ -544,10 +542,9 @@ class DrumMachine(App):
                         if candidate is not None:
                             pad = candidate
             if level > 0 and 0 <= pad < len(self.samples):
-                sample = self.samples[pad]
-                # copy so each Voice owns its buffer (never aliases the shared pad sample)
+                # Voice only reads the shared pad sample; playback never mutates it
                 with self.audio_lock:
-                    self.current_voice = Voice(sample.copy(), level / 100)
+                    self.current_voice = Voice(self.samples[pad], level / 100)
                 self.bar_steps[self.current_step] = pad
         if triggered:
             # Schedule UI refresh on main thread (audio thread can't touch Textual directly)
