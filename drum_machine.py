@@ -129,7 +129,7 @@ class DrumMachine(App):
         color: #888;
     }
     #saved-patterns {
-        width: 80%;
+        width: 100%;
     }
     #saved-patterns-title {
         width: auto;
@@ -262,10 +262,10 @@ class DrumMachine(App):
                         yield Label(" ", id=f"hist_{row}_{i}")
         with Vertical(id="saved-patterns"):
             yield Label("Saved Patterns", id="saved-patterns-title")
-            for row in range(4):
-                with Horizontal(id=f"spat-row-{row}"):
-                    for i in range(16):
-                        yield Label(" ", id=f"spat_{row}_{i}")
+            for slot in range(4):
+                with Horizontal(id=f"spat-row-{slot}"):
+                    for i in range(self.num_steps):
+                        yield Label(" ", id=f"spat_{slot}_{i}")
         buttons = []
         for row in range(4):
             for col in range(4):
@@ -371,13 +371,15 @@ class DrumMachine(App):
             self.toggle_step(self.cursor_step)
 
     def action_save_pattern(self):
-        if not self.history:
-            self.log_widget.write("Nothing saved: no completed bar in history\n")
-            return
-        self.saved_patterns.insert(0, list(self.history[0]))
+        # a saved slot is a full sequence (all bars), so save the whole
+        # current pattern (pad indices only, levels ignored like MIDI export)
+        pattern = [pad if pad >= 0 else None for pad, level in self.steps]
+        self.saved_patterns.insert(0, pattern)
         del self.saved_patterns[4:]
         self._refresh_saved_patterns()
-        self.log_widget.write(f"Saved bar to saved_patterns ({len(self.saved_patterns)} saved)\n")
+        self.log_widget.write(
+            f"Saved pattern ({self.num_steps} steps) to saved_patterns "
+            f"({len(self.saved_patterns)} saved)\n")
 
     def action_export_midi(self):
         # Export all saved patterns as consecutive bars into one MIDI file.
@@ -441,6 +443,7 @@ class DrumMachine(App):
         # actual terminal width; all bars get the same width and stay as wide
         # as possible.
         avail = width or self.size.width or 80
+        # step/playhead/voice rows hold one bar (16 cells) each
         cell = max(2, avail // STEPS_PER_BAR)
         for i in range(self.num_steps):
             for widget in (self.query_one(f"#step_{i}", Button),
@@ -448,6 +451,13 @@ class DrumMachine(App):
                            self.query_one(f"#voice_{i}", Label)):
                 widget.styles.width = cell
                 widget.styles.min_width = cell
+        # saved-pattern rows show the whole sequence (num_steps cells) per slot
+        spat_cell = max(2, avail // self.num_steps)
+        for slot in range(4):
+            for i in range(self.num_steps):
+                label = self.query_one(f"#spat_{slot}_{i}", Label)
+                label.styles.width = spat_cell
+                label.styles.min_width = spat_cell
 
     def on_resize(self, event):
         if getattr(self, "_ui_ready", False):
@@ -464,11 +474,11 @@ class DrumMachine(App):
                     label.update(" ")
 
     def _refresh_saved_patterns(self):
-        for row in range(4):
-            for i in range(16):
-                label = self.query_one(f"#spat_{row}_{i}", Label)
-                if row < len(self.saved_patterns):
-                    pad = self.saved_patterns[row][i]
+        for slot in range(4):
+            for i in range(self.num_steps):
+                label = self.query_one(f"#spat_{slot}_{i}", Label)
+                if slot < len(self.saved_patterns) and i < len(self.saved_patterns[slot]):
+                    pad = self.saved_patterns[slot][i]
                     label.update(str(pad + 1) if pad is not None else " ")
                 else:
                     label.update(" ")
