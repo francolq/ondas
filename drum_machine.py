@@ -1,4 +1,5 @@
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Grid, Horizontal, Vertical
 from textual.widgets import Button, Label, Log
 from textual import on
@@ -57,6 +58,7 @@ class DrumMachine(App):
         ("right", "cursor_right", "Right"),
         ("space", "activate", "Activate"),
         ("enter", "activate", "Activate"),
+        Binding("tab", "toggle_zone", "Switch Zone", priority=True),
     ]
 
     CSS = """
@@ -295,6 +297,18 @@ class DrumMachine(App):
         self._apply_view()
         self.kbd_zone = "steps" if self.steps_view else "pads"
         self.log_widget.write(f"View: {'STEPS' if self.steps_view else 'PADS'}\n")
+
+    def action_toggle_zone(self):
+        if self.kbd_zone == "pads":
+            self.kbd_zone = "steps"
+        else:
+            self.kbd_zone = "pads"
+            # the pads grid is hidden in steps view; reveal it so the pads
+            # cursor is visible
+            if self.steps_view:
+                self.steps_view = False
+                self._apply_view()
+        self.log_widget.write(f"Zone: {self.kbd_zone.upper()}\n")
 
     def _set_step_cursor(self, step_num):
         old = self.cursor_step
