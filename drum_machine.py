@@ -723,6 +723,10 @@ class DrumMachine(App):
         else:
             self.select_pad(pad_num)
             self.trigger_pad(pad_num)
+            # keyboard/mouse are one-shot presses: emulate a release so a
+            # quantized pending_trigger fires once at the next step, not every
+            # step (MIDI keeps it true until note_off to re-fire while held)
+            self.pending_trigger_on = False
             # the "active" (held-note) highlight is for MIDI note_on/note_off;
             # keyboard/mouse are one-shots, so don't leave it stuck on
             self.query_one(f"#pad_{pad_num}", Button).remove_class("active")
