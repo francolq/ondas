@@ -51,6 +51,12 @@ class DrumMachine(App):
         ("v", "toggle_view", "Toggle View"),
         ("s", "save_pattern", "Save Pattern"),
         ("e", "export_midi", "Export MIDI"),
+        ("up", "cursor_up", "Up"),
+        ("down", "cursor_down", "Down"),
+        ("left", "cursor_left", "Left"),
+        ("right", "cursor_right", "Right"),
+        ("space", "activate", "Activate"),
+        ("enter", "activate", "Activate"),
     ]
 
     CSS = """
@@ -151,6 +157,9 @@ class DrumMachine(App):
     Button.step-cursor {
         text-style: reverse !important;
     }
+    Button.kbd-cursor {
+        text-style: reverse !important;
+    }
     Grid {
         width: 80%;
         height: 50%;
@@ -194,6 +203,8 @@ class DrumMachine(App):
         self.selected_pad = 0
         # -1 = no step selected (e.g. by CC13) yet
         self.cursor_step = -1
+        # which zone the arrow-key cursor is in: "pads" or "steps"
+        self.kbd_zone = "pads"
         self.select_all = False
         self.stream = None
         self.current_voice = None
@@ -238,7 +249,9 @@ class DrumMachine(App):
                     yield Label(" ", id=f"voice_{i}")
             with Horizontal(id=f"steps-row-{bar}", classes="steps-row"):
                 for i in range(lo, hi):
-                    yield Button(" ", id=f"step_{i}", classes="step-off")
+                    button = Button(" ", id=f"step_{i}", classes="step-off")
+                    button.can_focus = False
+                    yield button
         with Vertical(id="history"):
             yield Label("History", id="history-title")
             for row in range(4):
@@ -268,7 +281,9 @@ class DrumMachine(App):
                     label = f"{pad_idx+1}\n{name}" if len(name) <= 8 else f"{pad_idx+1}\n{name[:8]}…"
                 else:
                     label = f"{pad_idx+1}"
-                buttons.append(Button(label, id=f"pad_{pad_idx}"))
+                button = Button(label, id=f"pad_{pad_idx}")
+                button.can_focus = False
+                buttons.append(button)
         yield Grid(*buttons, id="pads-grid")
         yield Log("Drum machine ready.", id="log")
 
@@ -276,7 +291,68 @@ class DrumMachine(App):
     def action_toggle_view(self):
         self.steps_view = not self.steps_view
         self._apply_view()
+        self.kbd_zone = "steps" if self.steps_view else "pads"
         self.log_widget.write(f"View: {'STEPS' if self.steps_view else 'PADS'}\n")
+
+    def _set_step_cursor(self, step_num):
+        old = self.cursor_step
+        self.cursor_step = step_num
+        if old >= 0:
+            self._update_step_button(old)
+        if self.cursor_step >= 0:
+            self._update_step_button(self.cursor_step)
+
+    def action_cursor_left(self):
+        if self.kbd_zone == "pads":
+            row, col = divmod(self.selected_pad, 4)
+            self.select_pad(row * 4 + (col - 1) % 4)
+        else:
+            cur = self.cursor_step if self.cursor_step >= 0 else 0
+            self._set_step_cursor((cur - 1) % self.num_steps)
+
+    def action_cursor_right(self):
+        if self.kbd_zone == "pads":
+            row, col = divmod(self.selected_pad, 4)
+            self.select_pad(row * 4 + (col + 1) % 4)
+        else:
+            cur = self.cursor_step if self.cursor_step >= 0 else 0
+            self._set_step_cursor((cur + 1) % self.num_steps)
+
+    def action_cursor_up(self):
+        if self.kbd_zone == "pads":
+            row, col = divmod(self.selected_pad, 4)
+            if row < 3:
+                # grid is rendered inverted: +4 moves visually up
+                self.select_pad(self.selected_pad + 4)
+            else:
+                # step rows sit above the pads: land on the last bar, same column
+                self.kbd_zone = "steps"
+                self._set_step_cursor((self.bars - 1) * STEPS_PER_BAR + col)
+        else:
+            cur = self.cursor_step if self.cursor_step >= 0 else 0
+            if cur >= STEPS_PER_BAR:
+                self._set_step_cursor(cur - STEPS_PER_BAR)
+
+    def action_cursor_down(self):
+        if self.kbd_zone == "pads":
+            row, col = divmod(self.selected_pad, 4)
+            if row > 0:
+                self.select_pad(self.selected_pad - 4)
+        else:
+            cur = self.cursor_step if self.cursor_step >= 0 else 0
+            if cur + STEPS_PER_BAR < self.num_steps:
+                self._set_step_cursor(cur + STEPS_PER_BAR)
+            elif not self.steps_view:
+                # pads sit below the step rows: land on the top row, same
+                # column (4 pad columns vs 16 step columns per bar)
+                self.kbd_zone = "pads"
+                self.select_pad(3 * 4 + cur % 4)
+
+    def action_activate(self):
+        if self.kbd_zone == "pads":
+            self._activate_pad(self.selected_pad)
+        elif self.cursor_step >= 0:
+            self.toggle_step(self.cursor_step)
 
     def action_save_pattern(self):
         if not self.history:
@@ -423,7 +499,11 @@ class DrumMachine(App):
                 return
 
     def select_pad(self, pad_num):
+        prev = self.selected_pad
         self.selected_pad = pad_num
+        if prev != pad_num:
+            self.query_one(f"#pad_{prev}", Button).remove_class("kbd-cursor")
+        self.query_one(f"#pad_{pad_num}", Button).add_class("kbd-cursor")
         if pad_num < len(self.pad_names):
             name = self.pad_names[pad_num]
             self.query_one("#selected-pad-label", Label).update(f"Pad {pad_num+1}: {name}")
@@ -615,6 +695,19 @@ class DrumMachine(App):
             self._update_step_button(i)
         self._update_voice_row()
 
+    def _activate_pad(self, pad_num):
+        if pad_num == PLAY_PAD:
+            self.toggle_play()
+        elif pad_num == QUANTIZE_PAD:
+            self.toggle_quantize()
+        elif pad_num == SELECT_ALL_PAD:
+            self.toggle_select_all()
+        elif pad_num == RECORD_PAD:
+            self.toggle_record()
+        else:
+            self.select_pad(pad_num)
+            self.trigger_pad(pad_num)
+
     @on(Button.Pressed)
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
@@ -622,19 +715,12 @@ class DrumMachine(App):
             return
         if button_id.startswith("pad_"):
             pad_num = int(button_id.replace("pad_", ""))
-            if pad_num == PLAY_PAD:
-                self.toggle_play()
-            elif pad_num == QUANTIZE_PAD:
-                self.toggle_quantize()
-            elif pad_num == SELECT_ALL_PAD:
-                self.toggle_select_all()
-            elif pad_num == RECORD_PAD:
-                self.toggle_record()
-            else:
-                self.select_pad(pad_num)
-                self.trigger_pad(pad_num)
+            self.kbd_zone = "pads"
+            self._activate_pad(pad_num)
         elif button_id.startswith("step_"):
             step_num = int(button_id.replace("step_", ""))
+            self.kbd_zone = "steps"
+            self._set_step_cursor(step_num)
             self.toggle_step(step_num)
 
     def on_midi(self, msg):
@@ -663,16 +749,13 @@ class DrumMachine(App):
             self.rand = msg.value / 127.0
             self.rand_label.update(f"Ran: {int(self.rand * 100)}%")
         elif msg.type == "control_change" and msg.control == 13:
-            old = self.cursor_step
             # knob extremes (0 and 127) deselect: no step selected;
             # rounding (not truncating) keeps the end steps selectable
-            self.cursor_step = (
+            value = (
                 -1 if msg.value in (0, 127)
                 else int((msg.value - 1) * (self.num_steps - 1) / 125 + 0.5))
-            if old >= 0:
-                self._update_step_button(old)
-            if self.cursor_step >= 0:
-                self._update_step_button(self.cursor_step)
+            self.kbd_zone = "steps" if value >= 0 else self.kbd_zone
+            self._set_step_cursor(value)
         elif msg.type == "control_change" and msg.control == 12:
             level = int(msg.value / 26) * 25
             if level > 100:
@@ -685,6 +768,7 @@ class DrumMachine(App):
                 self._update_step_button(step)
                 self._update_voice_cell(step)
         elif msg.type == "control_change" and msg.control == 15:
+            self.kbd_zone = "pads"
             self.select_pad(int(msg.value * 15 / 127))
 
     def on_unmount(self):
