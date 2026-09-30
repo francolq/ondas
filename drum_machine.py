@@ -14,6 +14,7 @@ import threading
 
 SAMPLE_RATE = 44100
 BPM = 160
+STEPS_PER_BAR = 16
 LEVEL_CHARS = {0: "0", 25: "2", 50: "5", 75: "7", 100: "1"}
 LEVELS = [0, 25, 50, 75, 100]
 
@@ -58,39 +59,39 @@ class DrumMachine(App):
     }
     #controls {
         width: 80%;
-        height: 3;
+        height: auto;
     }
     #controls Label {
         width: auto;
         margin: 0 2;
     }
-    #playhead-row {
-        width: 80%;
+    .playhead-row {
+        width: 100%;
         height: 1;
     }
-    #playhead-row Label {
+    .playhead-row Label {
         width: 5;
         min-width: 5;
         height: 1;
         content-align: center top;
         color: yellow;
     }
-    #voice-row {
-        width: 80%;
+    .voice-row {
+        width: 100%;
         height: 1;
     }
-    #voice-row Label {
+    .voice-row Label {
         width: 5;
         min-width: 5;
         height: 1;
         content-align: center top;
         color: cyan;
     }
-    #steps-row {
-        width: 80%;
-        height: 5;
+    .steps-row {
+        width: 100%;
+        height: 3;
     }
-    #steps-row Button {
+    .steps-row Button {
         width: 5;
         min-width: 5;
         height: 3;
@@ -171,18 +172,20 @@ class DrumMachine(App):
     }
     """
 
-    def __init__(self, midi_port, sample_files, pattern=None, bpm=BPM):
+    def __init__(self, midi_port, sample_files, pattern=None, bpm=BPM, bars=1):
         super().__init__()
         self.midi_port = midi_port
         self.sample_files = sample_files
         self.bpm = bpm
         self.samples_per_step = int(SAMPLE_RATE * 60 / self.bpm / 4)
+        self.bars = bars
+        self.num_steps = STEPS_PER_BAR * self.bars
         self.fatal_error = None
         # pad display names, computed once from the file names
         self.pad_names = [os.path.splitext(os.path.basename(p))[0] for p in sample_files]
         self.active_pads = set()
         self.samples = []
-        self.steps = [(-1, 0) for _ in range(16)]
+        self.steps = [(-1, 0) for _ in range(self.num_steps)]
         self._auto_start = pattern is not None
         if pattern:
             for step, pad in enumerate(pattern):
@@ -202,7 +205,8 @@ class DrumMachine(App):
         self.pending_trigger_on = False
         self.record = False
         self.steps_view = False
-        self.bar_steps = [None] * 16
+        self.bar_steps = [None] * STEPS_PER_BAR
+        self._ui_ready = False
 
         # history is a list of rows, where each row is a
         # 16-element list, one entry per step of a completed bar
@@ -223,15 +227,18 @@ class DrumMachine(App):
             yield Label(f"BPM: {self.bpm}", id="bpm-label")
             yield Label("Pad 1:", id="selected-pad-label")
             yield Label("View: PADS", id="view-label")
-        with Horizontal(id="playhead-row"):
-            for i in range(16):
-                yield Label(" ", id=f"ph_{i}")
-        with Horizontal(id="voice-row"):
-            for i in range(16):
-                yield Label(" ", id=f"voice_{i}")
-        with Horizontal(id="steps-row"):
-            for i in range(16):
-                yield Button(" ", id=f"step_{i}", classes="step-off")
+        for bar in range(self.bars):
+            lo = bar * STEPS_PER_BAR
+            hi = lo + STEPS_PER_BAR
+            with Horizontal(id=f"playhead-row-{bar}", classes="playhead-row"):
+                for i in range(lo, hi):
+                    yield Label(" ", id=f"ph_{i}")
+            with Horizontal(id=f"voice-row-{bar}", classes="voice-row"):
+                for i in range(lo, hi):
+                    yield Label(" ", id=f"voice_{i}")
+            with Horizontal(id=f"steps-row-{bar}", classes="steps-row"):
+                for i in range(lo, hi):
+                    yield Button(" ", id=f"step_{i}", classes="step-off")
         with Vertical(id="history"):
             yield Label("History", id="history-title")
             for row in range(4):
@@ -337,6 +344,23 @@ class DrumMachine(App):
             saved_patterns.display = False
             view_label.update("View: PADS")
 
+    def _apply_cell_width(self, width=None):
+        # Each row holds one bar (STEPS_PER_BAR cells), so size cells from the
+        # actual terminal width; all bars get the same width and stay as wide
+        # as possible.
+        avail = width or self.size.width or 80
+        cell = max(2, avail // STEPS_PER_BAR)
+        for i in range(self.num_steps):
+            for widget in (self.query_one(f"#step_{i}", Button),
+                           self.query_one(f"#ph_{i}", Label),
+                           self.query_one(f"#voice_{i}", Label)):
+                widget.styles.width = cell
+                widget.styles.min_width = cell
+
+    def on_resize(self, event):
+        if getattr(self, "_ui_ready", False):
+            self._apply_cell_width(event.size.width)
+
     def _refresh_history(self):
         for row in range(4):
             for i in range(16):
@@ -363,6 +387,8 @@ class DrumMachine(App):
         self.rand_label = self.query_one("#rand-label", Label)
         self.load_samples()
         self.select_pad(0)
+        self._apply_cell_width()
+        self._ui_ready = True
         self.update_step_display()
         self._apply_view()
         self._refresh_saved_patterns()
@@ -453,7 +479,7 @@ class DrumMachine(App):
         self.query_one(f"#pad_{SELECT_ALL_PAD}", Button).label = (
             f"{SELECT_ALL_PAD+1}\nAll: ON" if self.select_all
             else f"{SELECT_ALL_PAD+1}\nAll:OFF")
-        for i in range(16):
+        for i in range(self.num_steps):
             self._update_step_button(i)
         self.log_widget.write(f"Select all steps {'ON' if self.select_all else 'OFF'}\n")
 
@@ -487,7 +513,7 @@ class DrumMachine(App):
             self.current_step = -1
             self.step_samples_accumulated = self.samples_per_step
             self.pending_trigger = None
-            self.bar_steps = [None] * 16
+            self.bar_steps = [None] * STEPS_PER_BAR
             self.query_one(f"#pad_{PLAY_PAD}", Button).label = f"{PLAY_PAD+1}\n■Stop"
 
     def audio_callback(self, outdata, frames, time, status):
@@ -511,12 +537,12 @@ class DrumMachine(App):
         while self.playing and self.step_samples_accumulated >= self.samples_per_step:
             self.step_samples_accumulated -= self.samples_per_step
             prev = self.current_step
-            self.current_step = (self.current_step + 1) % 16
-            if prev == 15 and self.current_step == 0:
-                # a bar (steps 0..15) just completed: push it into history
+            self.current_step = (self.current_step + 1) % self.num_steps
+            if prev >= 0 and self.current_step % STEPS_PER_BAR == 0:
+                # a bar (16 steps) just completed: push it into history
                 self.history.insert(0, self.bar_steps)
                 del self.history[4:]
-                self.bar_steps = [None] * 16
+                self.bar_steps = [None] * STEPS_PER_BAR
                 self.call_from_thread(self._refresh_history)
             triggered = True
 
@@ -542,7 +568,7 @@ class DrumMachine(App):
                 # Voice only reads the shared pad sample; playback never mutates it
                 with self.audio_lock:
                     self.current_voice = Voice(self.samples[pad], level / 100)
-                self.bar_steps[self.current_step] = pad
+                self.bar_steps[self.current_step % STEPS_PER_BAR] = pad
         if triggered:
             # Schedule UI refresh on main thread (audio thread can't touch Textual directly)
             self.call_from_thread(self._update_playhead, prev_step, self.current_step)
@@ -581,11 +607,11 @@ class DrumMachine(App):
         self.query_one(f"#voice_{step}", Label).update(str(pad + 1) if level > 0 else " ")
 
     def _update_voice_row(self):
-        for step in range(16):
+        for step in range(self.num_steps):
             self._update_voice_cell(step)
 
     def update_step_display(self):
-        for i in range(16):
+        for i in range(self.num_steps):
             self._update_step_button(i)
         self._update_voice_row()
 
@@ -642,7 +668,7 @@ class DrumMachine(App):
             # rounding (not truncating) keeps the end steps selectable
             self.cursor_step = (
                 -1 if msg.value in (0, 127)
-                else int((msg.value - 1) * 15 / 125 + 0.5))
+                else int((msg.value - 1) * (self.num_steps - 1) / 125 + 0.5))
             if old >= 0:
                 self._update_step_button(old)
             if self.cursor_step >= 0:
@@ -652,7 +678,7 @@ class DrumMachine(App):
             if level > 100:
                 level = 100
             value = (self.selected_pad, level) if level > 0 else (-1, 0)
-            targets = range(16) if self.select_all else (
+            targets = range(self.num_steps) if self.select_all else (
                 (self.cursor_step,) if self.cursor_step >= 0 else ())
             for step in targets:
                 self.steps[step] = value
@@ -689,15 +715,26 @@ def connect_midi():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Drum Machine with 16-step sequencer")
     parser.add_argument("samples", nargs="+", help="WAV files for pads 1-16")
-    parser.add_argument("--pattern", nargs=16, type=int,
-                        help="16-step pattern: pad numbers 0-16 (0=silence)")
+    parser.add_argument("--pattern", nargs="+", type=int,
+                        help="pattern: one int per step (16*bars), 0=silence, 1-16=pad")
     parser.add_argument("--bpm", type=int, default=BPM,
                         help=f"tempo in beats per minute (default: {BPM})")
+    parser.add_argument("--bars", type=int, default=1,
+                        help="number of 16-step bars in the sequence (default: 1)")
     args = parser.parse_args()
+
+    if args.bars < 1:
+        parser.error("--bars must be at least 1")
+    num_steps = 16 * args.bars
+    if args.pattern is not None and len(args.pattern) != num_steps:
+        parser.error(
+            f"--pattern needs exactly {num_steps} ints (16 * {args.bars} bars), "
+            f"got {len(args.pattern)}")
 
     samples = args.samples[:16]
     midi_port = connect_midi()
-    app = DrumMachine(midi_port, samples, pattern=args.pattern, bpm=args.bpm)
+    app = DrumMachine(midi_port, samples, pattern=args.pattern,
+                      bpm=args.bpm, bars=args.bars)
     if midi_port:
         midi_port.callback = app.on_midi
     app.run()
