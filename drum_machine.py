@@ -14,7 +14,6 @@ import threading
 
 SAMPLE_RATE = 44100
 BPM = 160
-SAMPLES_PER_STEP = int(SAMPLE_RATE * 60 / BPM / 4)
 LEVEL_CHARS = {0: "0", 25: "2", 50: "5", 75: "7", 100: "1"}
 LEVELS = [0, 25, 50, 75, 100]
 
@@ -172,10 +171,12 @@ class DrumMachine(App):
     }
     """
 
-    def __init__(self, midi_port, sample_files, pattern=None):
+    def __init__(self, midi_port, sample_files, pattern=None, bpm=BPM):
         super().__init__()
         self.midi_port = midi_port
         self.sample_files = sample_files
+        self.bpm = bpm
+        self.samples_per_step = int(SAMPLE_RATE * 60 / self.bpm / 4)
         self.fatal_error = None
         # pad display names, computed once from the file names
         self.pad_names = [os.path.splitext(os.path.basename(p))[0] for p in sample_files]
@@ -219,6 +220,7 @@ class DrumMachine(App):
         with Horizontal(id="controls"):
             yield Label("Vol: 100%", id="volume-label")
             yield Label("Ran:  0%", id="rand-label")
+            yield Label(f"BPM: {self.bpm}", id="bpm-label")
             yield Label("Pad 1:", id="selected-pad-label")
             yield Label("View: PADS", id="view-label")
         with Horizontal(id="playhead-row"):
@@ -293,7 +295,7 @@ class DrumMachine(App):
         track = mido.MidiTrack()
         mid.tracks.append(track)
         track.append(mido.MetaMessage("set_tempo",
-                                      tempo=mido.bpm2tempo(BPM), time=0))
+                                      tempo=mido.bpm2tempo(self.bpm), time=0))
 
         delta = 0  # ticks since last emitted event
         for pattern in self.saved_patterns:
@@ -483,7 +485,7 @@ class DrumMachine(App):
         else:
             self.playing = True
             self.current_step = -1
-            self.step_samples_accumulated = SAMPLES_PER_STEP
+            self.step_samples_accumulated = self.samples_per_step
             self.pending_trigger = None
             self.bar_steps = [None] * 16
             self.query_one(f"#pad_{PLAY_PAD}", Button).label = f"{PLAY_PAD+1}\n■Stop"
@@ -506,8 +508,8 @@ class DrumMachine(App):
         triggered = False
         prev_step = self.current_step
         recorded = []
-        while self.playing and self.step_samples_accumulated >= SAMPLES_PER_STEP:
-            self.step_samples_accumulated -= SAMPLES_PER_STEP
+        while self.playing and self.step_samples_accumulated >= self.samples_per_step:
+            self.step_samples_accumulated -= self.samples_per_step
             prev = self.current_step
             self.current_step = (self.current_step + 1) % 16
             if prev == 15 and self.current_step == 0:
@@ -689,11 +691,13 @@ if __name__ == "__main__":
     parser.add_argument("samples", nargs="+", help="WAV files for pads 1-16")
     parser.add_argument("--pattern", nargs=16, type=int,
                         help="16-step pattern: pad numbers 0-16 (0=silence)")
+    parser.add_argument("--bpm", type=int, default=BPM,
+                        help=f"tempo in beats per minute (default: {BPM})")
     args = parser.parse_args()
 
     samples = args.samples[:16]
     midi_port = connect_midi()
-    app = DrumMachine(midi_port, samples, pattern=args.pattern)
+    app = DrumMachine(midi_port, samples, pattern=args.pattern, bpm=args.bpm)
     if midi_port:
         midi_port.callback = app.on_midi
     app.run()
