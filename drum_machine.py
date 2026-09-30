@@ -534,13 +534,8 @@ class DrumMachine(App):
             else:
                 pad, level = self.steps[self.current_step]
                 if level > 0 and self.rand > 0 and random.random() < self.rand:
-                    # random swap: pick a saved pattern uniformly, use its pad
-                    # at the current step (skip if the saved step is empty)
-                    if self.saved_patterns:
-                        pattern = random.choice(self.saved_patterns)
-                        candidate = pattern[self.current_step]
-                        if candidate is not None:
-                            pad = candidate
+                    # random swap: pick any loaded pad uniformly
+                    pad = random.randrange(len(self.samples))
             if level > 0 and 0 <= pad < len(self.samples):
                 # Voice only reads the shared pad sample; playback never mutates it
                 with self.audio_lock:
