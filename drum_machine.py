@@ -723,6 +723,9 @@ class DrumMachine(App):
         else:
             self.select_pad(pad_num)
             self.trigger_pad(pad_num)
+            # the "active" (held-note) highlight is for MIDI note_on/note_off;
+            # keyboard/mouse are one-shots, so don't leave it stuck on
+            self.query_one(f"#pad_{pad_num}", Button).remove_class("active")
 
     @on(Button.Pressed)
     def on_button_pressed(self, event: Button.Pressed) -> None:
