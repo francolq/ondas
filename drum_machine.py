@@ -381,7 +381,8 @@ class DrumMachine(App):
 
     def action_export_midi(self):
         # Export all saved patterns as consecutive bars into one MIDI file.
-        # Each saved pattern is a 16-element list of 0-based pad indices or None.
+        # Each saved pattern is a list of 0-based pad indices or None, one entry
+        # per step (16 steps per bar, so 16*bars entries for a full sequence).
         # Pad p -> note PAD_TO_NOTE[p] (36 + p); fixed velocity since saved
         # patterns carry no per-step level.
         VELOCITY = 100
@@ -398,8 +399,7 @@ class DrumMachine(App):
 
         delta = 0  # ticks since last emitted event
         for pattern in self.saved_patterns:
-            for step in range(16):
-                pad = pattern[step] if step < len(pattern) else None
+            for pad in pattern:
                 if pad is not None:
                     note = PAD_TO_NOTE[pad]
                     track.append(mido.Message("note_on", note=note,
