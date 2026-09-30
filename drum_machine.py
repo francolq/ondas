@@ -285,7 +285,9 @@ class DrumMachine(App):
                 button.can_focus = False
                 buttons.append(button)
         yield Grid(*buttons, id="pads-grid")
-        yield Log("Drum machine ready.", id="log")
+        log = Log("Drum machine ready.", id="log")
+        log.can_focus = False
+        yield log
 
     # Textual action bound to the v key via class attribute BINDINGS
     def action_toggle_view(self):
