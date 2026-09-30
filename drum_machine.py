@@ -109,7 +109,7 @@ class DrumMachine(App):
         border: none tall;
     }
     #history {
-        width: 80%;
+        width: 100%;
     }
     #history-title {
         width: auto;
@@ -218,11 +218,11 @@ class DrumMachine(App):
         self.pending_trigger_on = False
         self.record = False
         self.steps_view = False
-        self.bar_steps = [None] * STEPS_PER_BAR
+        self.cycle_steps = [None] * self.num_steps
         self._ui_ready = False
 
-        # history is a list of rows, where each row is a
-        # 16-element list, one entry per step of a completed bar
+        # history is a list of rows, where each row is a full completed cycle:
+        # a num_steps list (16 steps per bar * bars), one entry per step
         # each entry is a 0-based pad index or None
         self.history = []
         initial_pattern = [pad if pad >= 0 else None for pad, level in self.steps]
@@ -258,7 +258,7 @@ class DrumMachine(App):
             yield Label("History", id="history-title")
             for row in range(4):
                 with Horizontal(id=f"hist-row-{row}"):
-                    for i in range(16):
+                    for i in range(self.num_steps):
                         yield Label(" ", id=f"hist_{row}_{i}")
         with Vertical(id="saved-patterns"):
             yield Label("Saved Patterns", id="saved-patterns-title")
@@ -451,13 +451,18 @@ class DrumMachine(App):
                            self.query_one(f"#voice_{i}", Label)):
                 widget.styles.width = cell
                 widget.styles.min_width = cell
-        # saved-pattern rows show the whole sequence (num_steps cells) per slot
-        spat_cell = max(2, avail // self.num_steps)
+        # saved-pattern/history rows show a whole sequence (num_steps cells)
+        seq_cell = max(2, avail // self.num_steps)
         for slot in range(4):
             for i in range(self.num_steps):
                 label = self.query_one(f"#spat_{slot}_{i}", Label)
-                label.styles.width = spat_cell
-                label.styles.min_width = spat_cell
+                label.styles.width = seq_cell
+                label.styles.min_width = seq_cell
+        for row in range(4):
+            for i in range(self.num_steps):
+                label = self.query_one(f"#hist_{row}_{i}", Label)
+                label.styles.width = seq_cell
+                label.styles.min_width = seq_cell
 
     def on_resize(self, event):
         if getattr(self, "_ui_ready", False):
@@ -465,11 +470,11 @@ class DrumMachine(App):
 
     def _refresh_history(self):
         for row in range(4):
-            for i in range(16):
+            for i in range(self.num_steps):
                 label = self.query_one(f"#hist_{row}_{i}", Label)
                 if row < len(self.history):
                     pad = self.history[row][i]
-                    label.update(str(pad + 1) if pad is not None else " ")
+                    label.update(str(pad + 1) if pad is not None else "_")
                 else:
                     label.update(" ")
 
@@ -479,7 +484,7 @@ class DrumMachine(App):
                 label = self.query_one(f"#spat_{slot}_{i}", Label)
                 if slot < len(self.saved_patterns) and i < len(self.saved_patterns[slot]):
                     pad = self.saved_patterns[slot][i]
-                    label.update(str(pad + 1) if pad is not None else " ")
+                    label.update(str(pad + 1) if pad is not None else "_")
                 else:
                     label.update(" ")
 
@@ -619,7 +624,7 @@ class DrumMachine(App):
             self.current_step = -1
             self.step_samples_accumulated = self.samples_per_step
             self.pending_trigger = None
-            self.bar_steps = [None] * STEPS_PER_BAR
+            self.cycle_steps = [None] * self.num_steps
             self.query_one(f"#pad_{PLAY_PAD}", Button).label = f"{PLAY_PAD+1}\n■Stop"
 
     def audio_callback(self, outdata, frames, time, status):
@@ -644,11 +649,11 @@ class DrumMachine(App):
             self.step_samples_accumulated -= self.samples_per_step
             prev = self.current_step
             self.current_step = (self.current_step + 1) % self.num_steps
-            if prev >= 0 and self.current_step % STEPS_PER_BAR == 0:
-                # a bar (16 steps) just completed: push it into history
-                self.history.insert(0, self.bar_steps)
+            if prev >= 0 and self.current_step == 0:
+                # a full cycle (num_steps) just completed: push it into history
+                self.history.insert(0, self.cycle_steps)
                 del self.history[4:]
-                self.bar_steps = [None] * STEPS_PER_BAR
+                self.cycle_steps = [None] * self.num_steps
                 self.call_from_thread(self._refresh_history)
             triggered = True
 
@@ -674,7 +679,7 @@ class DrumMachine(App):
                 # Voice only reads the shared pad sample; playback never mutates it
                 with self.audio_lock:
                     self.current_voice = Voice(self.samples[pad], level / 100)
-                self.bar_steps[self.current_step % STEPS_PER_BAR] = pad
+                self.cycle_steps[self.current_step] = pad
         if triggered:
             # Schedule UI refresh on main thread (audio thread can't touch Textual directly)
             self.call_from_thread(self._update_playhead, prev_step, self.current_step)
