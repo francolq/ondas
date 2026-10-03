@@ -13,14 +13,15 @@ def main():
     print(f"File: {path}")
     print(f"Type: {mid.type}  Tracks: {len(mid.tracks)}  "
           f"Ticks per beat: {mid.ticks_per_beat}")
-    print("Leading number = absolute tick position")
+    print("Leading numbers = absolute ticks and seconds (default 120 BPM)")
 
     for i, track in enumerate(mid.tracks):
         print(f"\nTrack {i}: {track.name}")
         abs_ticks = 0
         for msg in track:
             abs_ticks += msg.time
-            print(f"  {abs_ticks:>8}  {msg}")
+            secs = mido.tick2second(abs_ticks, mid.ticks_per_beat, 500000)
+            print(f"  {abs_ticks:>8}  {secs:>8.3f}s  {msg}")
 
 
 if __name__ == "__main__":
