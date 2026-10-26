@@ -658,9 +658,12 @@ class DrumMachine(App):
             triggered = True
 
             level = 0
+            gain = 0.0
             if self.pending_trigger is not None:
                 # step is overriden by pressed pad
                 pad, level = self.pending_trigger
+                # pending_trigger holds raw MIDI velocity (0-127)
+                gain = level / 127
                 if not self.pending_trigger_on:
                     # note was released
                     self.pending_trigger = None
@@ -672,13 +675,15 @@ class DrumMachine(App):
                     recorded.append((target, pad, level))
             else:
                 pad, level = self.steps[self.current_step]
+                # step levels are 0-100
+                gain = level / 100
                 if level > 0 and self.rand > 0 and random.random() < self.rand:
                     # random swap: pick any loaded pad uniformly
                     pad = random.randrange(len(self.samples))
             if level > 0 and 0 <= pad < len(self.samples):
                 # Voice only reads the shared pad sample; playback never mutates it
                 with self.audio_lock:
-                    self.current_voice = Voice(self.samples[pad], level / 100)
+                    self.current_voice = Voice(self.samples[pad], gain)
                 self.cycle_steps[self.current_step] = pad
         if triggered:
             # Schedule UI refresh on main thread (audio thread can't touch Textual directly)
